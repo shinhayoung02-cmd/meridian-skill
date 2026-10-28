@@ -74,3 +74,7 @@ MERIDIAN(FLIGHT RHYTHM) 작업 — UI 흐름 영상(라운지/기내 모니터/�
 ## 5. 보고 후 진행
 
 2번 보고가 끝나면 사용자 요청을 받는다. 수정 요청이면 0번 규칙대로 **로그 → OK → 적용** 순서를 지킨다.
+
+## 6. 공유 레포
+
+https://github.com/shinhayoung02-cmd/meridian-skill (Public) — 로컬 `~/projects/meridian-video`. 이 SKILL.md를 고치면 `skill/meridian/SKILL.md`에도 복사. 커밋·푸시는 사용자가 요청할 때만.
