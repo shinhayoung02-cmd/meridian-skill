@@ -1,0 +1,193 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Passenger Monitor Flow</title>
+<style>
+@font-face { font-family: KAS; src: local('KoreanAirSansKR'), local('KoreanAirSansKR Regular'), url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #02052e; }
+/* 1015x572 Figma 좌표계 그대로 사용 (4x export 이미지), 1920 폭에 맞춰 확대 */
+#stage { position: absolute; left: 452.5px; top: 254px; width: 1015px; height: 572px; transform: scale(1.8916); transform-origin: 50% 50%; overflow: hidden; background: #02052e; }
+.scene, .layer { position: absolute; inset: 0; }
+.scene { opacity: 0; }
+img { position: absolute; left: 0; top: 0; width: 1015px; height: 572px; }
+.txt { position: absolute; font-family: KAS; color: #fff; white-space: nowrap; }
+.roll { position: absolute; overflow: hidden; }
+</style></head>
+<body><div id="stage"></div>
+<script>
+const S = 'screens4x/';
+// ── 모션 기본값: 앱 UI 기준 (빠르게 시작해서 부드럽게 멈춤, 짧은 거리) ──
+const clamp = p => p < 0 ? 0 : p > 1 ? 1 : p;
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const rampO = (u, a, d) => easeOut((u - a) / d);   // a에서 시작, d초 동안
+const backO = (u, a, d, c = 1.2) => { const p = clamp((u - a) / d) - 1; return 1 + (c + 1) * p ** 3 + c * p ** 2; };
+// 터치: 0.13초 눌림 → 0.06초 유지 → 0.3초 동안 떼어짐. 반응은 떼는 순간(at + TAP_UP)부터
+const TAP_DOWN = .13, TAP_UP = .19, TAP_END = .49, SEL = .3;
+const tap = (u, at) => { const d = u - at; if (d < 0 || d > TAP_END) return 0; if (d < TAP_DOWN) return easeInOut(d / TAP_DOWN); if (d < TAP_UP) return 1; return 1 - easeInOut((d - TAP_UP) / (TAP_END - TAP_UP)); };
+const stage = document.getElementById('stage');
+
+function el(parent, html) { const d = document.createElement('div'); d.innerHTML = html.trim(); const n = d.firstChild; parent.appendChild(n); return n; }
+function img(parent, src) { return el(parent, `<img src="${S}${src}.png">`); }
+function layer(parent, src) { const l = el(parent, '<div class="layer"></div>'); img(l, src); return l; }
+function clip(parent, src, [x, y, w, h], radius = 10) {
+  const l = layer(parent, src);
+  l.style.clipPath = `inset(${y}px ${1015 - x - w}px ${572 - y - h}px ${x}px round ${radius}px)`;
+  l.style.transformOrigin = `${x + w / 2}px ${y + h / 2}px`; return l;
+}
+// 카드/탭 터치: 그 영역만 잠깐 어두워짐 (눌린 상태)
+function touch(parent, src, rect, radius) { const l = clip(parent, src, rect, radius); l.style.visibility = 'hidden'; return l; }
+function touchTick(l, u, at) { const t = tap(u, at); l.style.visibility = t > 0 ? 'visible' : 'hidden'; l.style.filter = `brightness(${1 - .16 * t})`; }
+// 등장: 0.55초, 12px
+function enter(l, u, a, dx = 0, dy = 12) { const p = rampO(u, a, .55); l.style.opacity = p; l.style.transform = `translate(${dx * (1 - p)}px, ${dy * (1 - p)}px)`; }
+
+const scenes = [];
+// btn: { src, rect, patch(버튼 없는 이미지), radius, at } — 버튼 터치 후 다음 화면으로
+function scene(dur, build, btn) {
+  const root = el(stage, '<div class="scene"></div>'), tick = build(root);
+  let press, patch;
+  if (btn) {
+    const [x, y, w, h] = btn.rect;
+    if (btn.patch) patch = clip(root, btn.patch, [x - 4, y - 4, w + 8, h + 8], 4);
+    press = clip(root, btn.src, [x, y, w, h], btn.radius ?? h / 2);
+  }
+  const at = btn && (btn.at ?? dur - .65);
+  scenes.push({ dur, root, tick: u => {
+    const pending = tick && tick(u);
+    if (press) {
+      const t = tap(u, at), vis = t > 0 ? 'visible' : 'hidden';
+      press.style.visibility = vis; if (patch) patch.style.visibility = vis;
+      press.style.transform = `scale(${1 - (patch ? .06 : 0) * t})`; press.style.filter = `brightness(${1 - .25 * t})`;
+    }
+    return pending;
+  } });
+}
+
+// 선택: 카드 터치 → 떼는 순간부터 선택 상태로 (0.3초)
+function activate(root, base, sel, rects, at) {
+  img(root, base);
+  const ts = rects.map(r => touch(root, base, r));
+  const s = layer(root, sel);
+  return u => { ts.forEach(t => touchTick(t, u, at)); s.style.opacity = rampO(u, at + TAP_UP - .05, SEL); };
+}
+// 홈 타임라인 First Meal 시간 텍스트 (Figma 1:1042: 248,381 53x22, 17.51px, 자간 4%, 가운데)
+function mealTime(root, vals) {
+  const box = el(root, '<div class="roll" style="left:238px;top:381px;width:73px;height:22px"></div>');
+  const col = el(box, '<div style="position:absolute;left:0;top:0;width:73px"></div>');
+  vals.forEach((v, i) => el(col, `<div class="txt" style="left:0;width:73px;top:${i * 22}px;font-size:17.509px;line-height:22px;letter-spacing:.04em;text-align:center">${v}</div>`));
+  return k => col.style.transform = `translateY(${-22 * k}px)`;
+}
+const TAB_JOURNEY = [2, 500, 240, 78], TAB_CALL = [759, 520, 253, 58];
+const CONTINUE = [746, 503, 206, 45], CLOSE = [240, 503, 535, 42], REQUEST = [738, 504, 217, 48];
+
+// 2-1 Welcome — 짧게
+scene(3.0, r => { img(r, '01_welcome'); });
+// 2-2 Home — 라운지에서 만든 일정이 타임라인으로 이어짐
+scene(4.2, r => {
+  img(r, 'b02_home_base');
+  const tl = clip(r, '02_home', [30, 250, 960, 200], 0);
+  return u => { const p = easeInOut((u - .7) / 1.7); tl.style.clipPath = `inset(250px ${1015 - 30 - 960 * p}px 122px 30px)`; };
+}, { src: '02_home', rect: TAB_JOURNEY, radius: 0 });
+// 2-3 My Journey — Meal / Sleep / Wake-up / Allergie 순차 등장 → Meal 터치
+// 선택 시 Meal 카드는 제자리에서 19px 떠오르며(Figma 136 → 117) 테두리·화살표가 같이 나타나고, 나머지 카드는 제자리에서 어두워짐
+scene(4.0, r => {
+  img(r, 'b03_journey_base');
+  const cards = [27, 272, 517, 761].map(x => clip(r, '03_journey', [x, 136, 228, 409], 12));
+  // 나머지 카드 어둡게: Figma 04의 Rectangle 13(#030836 64%)과 같은 막을 덮음 — 04 이미지는 "Wake-up"이 "Wake"로 되어 있어 글자가 바뀌어 보이므로
+  const dims = [272, 517, 761].map(x => el(r, `<div style="position:absolute;left:${x}px;top:136px;width:228px;height:409px;border-radius:12px;background:rgba(3,8,54,.64);opacity:0"></div>`));
+  const mealSel = clip(r, '04_journey_meal', [24, 114, 234, 415], 14);
+  const TAPAT = 2.7, LIFT = 19;
+  return u => {
+    const t = tap(u, TAPAT), p = easeInOut((u - TAPAT - TAP_UP + .05) / .6);
+    cards.forEach((c, i) => { if (u < TAPAT) return enter(c, u, .5 + i * .14); c.style.opacity = 1; c.style.transform = ''; });
+    cards[0].style.filter = mealSel.style.filter = `brightness(${1 - .16 * t})`;
+    cards[0].style.transform = `translateY(${-LIFT * p}px)`;
+    mealSel.style.transform = `translateY(${LIFT * (1 - p)}px)`; mealSel.style.opacity = clamp(p * 1.4);
+    dims.forEach(d => d.style.opacity = p);
+  };
+});
+// 2-4 Dining — Your Plan 카드가 오른쪽에서 이어서 들어옴
+scene(4.2, r => {
+  img(r, 'b05_dining_base');
+  const cards = [[41, 136, 150, 409], [208, 136, 287, 409], [512, 136, 160, 409], [689, 136, 287, 409]].map(rc => clip(r, '05_dining', rc, 12));
+  const t = touch(r, '05_dining', [208, 136, 287, 409], 12);
+  return u => { cards.forEach((c, i) => enter(c, u, .45 + i * .13, 36, 0)); touchTick(t, u, 3.3); };
+});
+// 2-4 First Meal 상세 — Main → Dessert 세로 스크롤 (감속 스크롤)
+scene(4.6, r => {
+  const main = layer(r, '06_meal_main'), des = layer(r, '07_meal_dessert');
+  return u => { const p = easeInOut((u - 2.1) / .95); main.style.transform = `translateY(${-572 * p}px)`; des.style.transform = `translateY(${572 * (1 - p)}px)`; };
+});
+// 2-5 Meal Notification — 홈 위 팝업 → Change Time 터치 → 팝업 닫힘 → 시간 변경
+scene(5.4, r => {
+  img(r, 'b02_home_notime');
+  const time = mealTime(r, ['01:30', '02:00']);
+  const dim = el(r, '<div class="layer" style="background:#000;opacity:0"></div>');
+  const pop = clip(r, 's02_home_popup', [153, 122, 706, 306], 13);
+  const full = layer(r, 's02_home_popup');
+  el(full, '<div style="position:absolute;left:329px;top:341px;width:179px;height:48px;background:#051766"></div>'); // Change Time 눌림용 패치
+  const btn = clip(full, 's02_home_popup', [329, 341, 179, 48], 4);
+  const OPEN = .7, TAPAT = 2.6, CLOSE = TAPAT + TAP_UP + .05;
+  return u => {
+    const open = rampO(u, OPEN, .42), close = easeInOut((u - CLOSE) / .35);
+    dim.style.opacity = .61 * open * (1 - close);
+    pop.style.opacity = rampO(u, OPEN, .28) * (1 - close);
+    pop.style.transform = `scale(${.96 + .04 * open - .03 * close})`;
+    full.style.opacity = (u > OPEN + .45 && u < CLOSE) ? 1 : 0;
+    const t = tap(u, TAPAT); btn.style.transform = `scale(${1 - .05 * t})`; btn.style.filter = `brightness(${1 - .25 * t})`;
+    time(easeInOut((u - (CLOSE + .55)) / .5));
+  };
+}, { src: 'b02_home_notime', rect: TAB_CALL, radius: 0 });
+// 2-6 Call Crew → Silent Assist 터치
+scene(3.2, r => activate(r, '08_callcrew', 's08_callcrew_sel', [[63, 367, 438, 152]], 1.2));
+// 2-7 Silent Assist — 상황: Uncomfortable
+scene(3.6, r => activate(r, '09_silent1', 's09_silent1_sel', [[63, 370, 433, 107]], 1.1), { src: 's09_silent1_sel', rect: CONTINUE, patch: 'n09_silent1' });
+// 2-8 Silent Assist — Approach discreetly → Silent
+scene(4.0, r => {
+  img(r, 'b10_silent2_base');
+  const t1 = touch(r, 'b10_silent2_base', [165, 251, 698, 81]), a = layer(r, 'b10_silent2_approach');
+  const t2 = touch(r, 'b10_silent2_approach', [265, 439, 231, 47], 23), f = layer(r, '10_silent2');
+  return u => { touchTick(t1, u, 1.0); a.style.opacity = rampO(u, 1.0 + TAP_UP - .05, SEL); touchTick(t2, u, 2.1); f.style.opacity = rampO(u, 2.1 + TAP_UP - .05, SEL); };
+}, { src: '10_silent2', rect: CONTINUE, patch: 'n10_silent2' });
+// 2-9 Silent Assist — Confirm Request (요청 접수)
+scene(3.6, r => {
+  img(r, 'b11_silent_confirm_base');
+  const chk = clip(r, '11_silent_confirm', [462, 156, 91, 92], 46);
+  return u => { chk.style.opacity = rampO(u, .5, .3); chk.style.transform = `scale(${.8 + .2 * backO(u, .5, .5, .8)})`; };
+}, { src: '11_silent_confirm', rect: CLOSE, patch: 'n11_silent_confirm' });
+// 2-10 Personal Care → Freshen Up (Figma 기준)
+scene(3.4, r => activate(r, '12_pc', 's12_pc_sel', [[86, 189, 263, 292]], 1.1), { src: 's12_pc_sel', rect: CONTINUE, patch: 'n12_pc' });
+// 2-11 Item Selection — Toothbrush → Toothpaste
+scene(4.0, r => {
+  img(r, 'b13_fresh_base');
+  const t1 = touch(r, 'b13_fresh_base', [61, 143, 283, 338]), one = layer(r, 'b13_fresh_one');
+  const t2 = touch(r, 'b13_fresh_one', [366, 143, 283, 338]), all = layer(r, '13_fresh');
+  return u => { touchTick(t1, u, .9); one.style.opacity = rampO(u, .9 + TAP_UP - .05, SEL); touchTick(t2, u, 1.9); all.style.opacity = rampO(u, 1.9 + TAP_UP - .05, SEL); };
+}, { src: '13_fresh', rect: REQUEST, patch: 'n13_fresh' });
+// 2-12 Confirm Request — Your cabin crew is preparing your set
+scene(4.0, r => {
+  img(r, 'b14_pc_confirm_base');
+  const chk = clip(r, '14_pc_confirm', [462, 147, 91, 92], 46);
+  return u => { chk.style.opacity = rampO(u, .5, .3); chk.style.transform = `scale(${.8 + .2 * backO(u, .5, .5, .8)})`; };
+});
+
+// 장면 전환 (fade-through): 이전 내용이 빠르게 사라지고 → 새 내용이 감속하며 나타남
+const OUT = .3, IN_A = .18, IN_D = .5, FADE_OUT = 1.0;
+let acc = 0; scenes.forEach(s => { s.start = acc; acc += s.dur; });
+window.DURATION = acc + IN_A + IN_D;
+window.render = t => {
+  const pending = [];
+  scenes.forEach((s, i) => {
+    const u = t - s.start, next = scenes[i + 1];
+    const visible = u >= 0 && (!next || t < next.start + OUT);
+    s.root.style.display = visible ? 'block' : 'none';
+    if (!visible) return;
+    const pin = i === 0 ? 1 : rampO(u, IN_A, IN_D), pout = next ? 1 - easeInOut((t - next.start) / OUT) : 1;
+    s.root.style.opacity = pin * pout; s.root.style.transform = `scale(${.985 + .015 * pin})`;
+    s.root.style.zIndex = i;
+    pending.push(s.tick(u));
+  });
+  stage.style.opacity = rampO(t, 0, .5) - clamp((t - (window.DURATION - FADE_OUT)) / FADE_OUT);
+  return Promise.all(pending);
+};
+window.ready = Promise.all([document.fonts.load('17px KAS'), ...[...document.images].map(i => i.decode())]);
+render(0);
+</script></body></html>

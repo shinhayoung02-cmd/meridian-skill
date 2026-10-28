@@ -1,0 +1,138 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Crew Device Flow</title>
+<style>
+@font-face { font-family: KASB; src: local('KoreanAirSansKR Bold'), url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: radial-gradient(ellipse at 50% 40%, #0d1a5c 0%, #050a35 60%, #02052e 100%); }
+/* 1280x1024 Figma 좌표계 그대로 사용 (2.5x export), 패드 화면을 가운데에 */
+#stage { position: absolute; left: 320px; top: 28px; width: 1280px; height: 1024px; transform: scale(.9766); transform-origin: 50% 50%; overflow: hidden; border-radius: 22px; background: #f1f4fa; box-shadow: 0 30px 80px rgba(0,0,0,.45); }
+.scene, .layer { position: absolute; inset: 0; }
+.scene { opacity: 0; }
+img { position: absolute; left: 0; top: 0; width: 1280px; height: 1024px; }
+.txt { position: absolute; font-family: KASB; white-space: nowrap; text-align: center; letter-spacing: 0; }
+</style></head>
+<body><div id="stage"></div>
+<script>
+const S = 'screens/';
+// ── 모션 기본값: 앱 UI 기준 (빠르게 시작해서 부드럽게 멈춤, 짧은 거리) ──
+const clamp = p => p < 0 ? 0 : p > 1 ? 1 : p;
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 4);
+const rampO = (u, a, d) => easeOut((u - a) / d);
+// 터치: 0.09초 만에 눌림 → 0.05초 유지 → 0.22초 동안 떼어짐. 반응은 떼는 순간(at + TAP_UP)부터
+const TAP_UP = .14, TAP_END = .36;
+const tap = (u, at) => { const d = u - at; if (d < 0 || d > TAP_END) return 0; if (d < .09) return easeOut(d / .09); if (d < TAP_UP) return 1; return 1 - easeOut((d - TAP_UP) / .22); };
+const stage = document.getElementById('stage');
+
+function el(parent, html) { const d = document.createElement('div'); d.innerHTML = html.trim(); const n = d.firstChild; parent.appendChild(n); return n; }
+function img(parent, src) { return el(parent, `<img src="${S}${src}.png">`); }
+function layer(parent, src) { const l = el(parent, '<div class="layer"></div>'); img(l, src); return l; }
+function clip(parent, src, [x, y, w, h], radius = 14) {
+  const l = layer(parent, src);
+  l.style.clipPath = `inset(${y}px ${1280 - x - w}px ${1024 - y - h}px ${x}px round ${radius}px)`;
+  l.style.transformOrigin = `${x + w / 2}px ${y + h / 2}px`; return l;
+}
+// 카드/보조 버튼 터치: 그 영역만 잠깐 어두워짐 (눌린 상태)
+function touch(parent, src, rect, radius) { const l = clip(parent, src, rect, radius); l.style.visibility = 'hidden'; return l; }
+function touchTick(l, u, at) { const t = tap(u, at); l.style.visibility = t > 0 ? 'visible' : 'hidden'; l.style.filter = `brightness(${1 - .1 * t})`; }
+function enter(l, u, a, dy = 8) { const p = rampO(u, a, .35); l.style.opacity = p; l.style.transform = `translateY(${dy * (1 - p)}px)`; }
+// Figma에서 굵기를 바꿀 수 없는 KoreanAirSansKR 텍스트만 HTML로 (Figma 위치·크기·색 그대로)
+function label(parent, [x, y, w, h], size, color, text) {
+  return el(parent, `<div class="txt" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;line-height:${h}px;font-size:${size}px;color:${color}">${text}</div>`);
+}
+
+const scenes = [];
+// btn: 주 버튼 터치 { src, rect, patch(버튼 없는 이미지), radius, at } / tapArea: 상세 보기·카드 터치 { src, rect, radius, at }
+function scene(dur, build, btn, tapArea) {
+  const root = el(stage, '<div class="scene"></div>'), tick = build(root);
+  let press, patch, area;
+  if (btn) {
+    const [x, y, w, h] = btn.rect;
+    patch = clip(root, btn.patch, [x - 4, y - 4, w + 8, h + 8], 6);
+    press = clip(root, btn.src, [x, y, w, h], btn.radius ?? 12);
+  }
+  if (tapArea) area = touch(root, tapArea.src, tapArea.rect, tapArea.radius ?? 12);
+  const at = btn && (btn.at ?? dur - .5), tat = tapArea && (tapArea.at ?? dur - .5);
+  scenes.push({ dur, root, tick: u => {
+    const pending = tick && tick(u);
+    if (press) {
+      const t = tap(u, at), vis = t > 0 ? 'visible' : 'hidden';
+      press.style.visibility = patch.style.visibility = vis;
+      press.style.transform = `scale(${1 - .06 * t})`; press.style.filter = `brightness(${1 - .25 * t})`;
+    }
+    if (area) touchTick(area, u, tat);
+    return pending;
+  } });
+}
+
+// 3-1 Operation Overview — KE081, 미완료 업무 / 승객 요청 / 다음 서비스 / 주의 승객 순차 등장
+scene(4.4, r => {
+  img(r, 'c_over_base');
+  const cards = [[73, 625], [326, 625], [73, 810], [326, 810]].map(([x, y]) => clip(r, 'c_over', [x, y, 249, 182]));
+  return u => cards.forEach((c, i) => enter(c, u, .6 + i * .1));
+});
+// 3-2 Cabin Map + Journey Plan — 다음 할 일 12A 침구 세팅(준비 필요) → 상세 보기
+scene(3.6, r => {
+  img(r, 'c_task');
+}, null, { src: 'c_task', rect: [904, 835, 318, 52] });
+// 12A 상세 — 수면 일정이 침구 준비 업무로: 준비 필요 → 진행 중
+scene(4.0, r => {
+  img(r, 'c_bed_notext');
+  const before = label(r, [1174, 214, 63, 19], 12, '#1a1a1a', '준비 필요'), after = label(r, [1174, 214, 63, 19], 12, '#1a1a1a', '진행 중');
+  return u => { const k = rampO(u, 1.6, .2); before.style.opacity = 1 - k; after.style.opacity = k; };
+});
+// Silent Assist — 7A 조용한 도움 요청 → 요청 카드 터치
+scene(3.6, r => {
+  img(r, 'c_silmap');
+}, null, { src: 'c_silmap', rect: [899, 349, 316, 84], radius: 14 });
+// Silent Assist 상세 — 확인 시작 → 접수됨 → 확인 중 → 대응 완료 (승객 화면 표시도 같이)
+scene(5.6, r => {
+  img(r, 'c_sil');
+  const chk = layer(r, 'c_sil_check'), done = layer(r, 'c_sil_done');
+  return u => { chk.style.opacity = rampO(u, 1.3 + TAP_UP + .1, .18); done.style.opacity = rampO(u, 3.4, .18); };
+}, { src: 'c_sil', rect: [1080, 891, 176, 52], patch: 'n_sil', at: 1.3, radius: 26 });
+// Personal Care — 7A 수면 준비 01:30 → 상세 보기
+scene(3.6, r => {
+  img(r, 'c_caremap');
+}, null, { src: 'c_caremap', rect: [899, 835, 318, 52] });
+// Personal Care 상세 — 슬리퍼·립밤 체크(2/4 → 4/4) → 전달 완료 (승객 화면: 준비 중 → 전달 완료)
+scene(6.6, r => {
+  img(r, 'c_care_base');
+  const t1 = touch(r, 'c_care_base', [632, 411, 136, 56], 10), s1 = layer(r, 'c_care_1');
+  const t2 = touch(r, 'c_care_1', [776, 411, 136, 56], 10), s2 = layer(r, 'c_care_2');
+  const s3 = layer(r, 'c_care_done');
+  const counts = ['2 / 4 준비', '3 / 4 준비', '4 / 4 준비'].map(t => label(r, [826, 362, 86, 19], 14, '#051766', t));
+  const fin = el(r, '<div class="layer"></div>');
+  label(fin, [1111, 290, 70, 26], 12, '#051766', '전달 완료'); label(fin, [218, 627, 66, 24], 12, '#ffffff', '전달 완료');
+  const A1 = .9, A2 = 1.7, DONE = 3.1;
+  return u => {
+    touchTick(t1, u, A1); touchTick(t2, u, A2);
+    const a1 = rampO(u, A1 + TAP_UP, .16), a2 = rampO(u, A2 + TAP_UP, .16), a3 = rampO(u, DONE + TAP_UP + .1, .18);
+    s1.style.opacity = a1; s2.style.opacity = a2; s3.style.opacity = a3; fin.style.opacity = a3;
+    const k = (u >= A2 + TAP_UP ? 2 : u >= A1 + TAP_UP ? 1 : 0);
+    counts.forEach((c, i) => c.style.opacity = i === k ? 1 : 0);
+  };
+}, { src: 'c_care_2', rect: [1064, 889, 191, 52], patch: 'n_care', at: 3.1, radius: 26 });
+// Service Status — 운항 현황으로 복귀
+scene(3.2, r => { img(r, 'c_over'); });
+
+// 장면 전환 (fade-through)
+const OUT = .16, IN_A = .08, IN_D = .32, FADE_OUT = .8;
+let acc = 0; scenes.forEach(s => { s.start = acc; acc += s.dur; });
+window.DURATION = acc + IN_A + IN_D;
+window.render = t => {
+  const pending = [];
+  scenes.forEach((s, i) => {
+    const u = t - s.start, next = scenes[i + 1];
+    const visible = u >= 0 && (!next || t < next.start + OUT);
+    s.root.style.display = visible ? 'block' : 'none';
+    if (!visible) return;
+    const pin = i === 0 ? 1 : rampO(u, IN_A, IN_D), pout = next ? 1 - clamp((t - next.start) / OUT) : 1;
+    s.root.style.opacity = pin * pout; s.root.style.transform = `translateY(${4 * (1 - pin)}px)`;
+    s.root.style.zIndex = i;
+    pending.push(s.tick(u));
+  });
+  stage.style.opacity = rampO(t, 0, .5) - clamp((t - (window.DURATION - FADE_OUT)) / FADE_OUT);
+  return Promise.all(pending);
+};
+window.ready = Promise.all([document.fonts.load('12px KASB'), ...[...document.images].map(i => i.decode())]);
+render(0);
+</script></body></html>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Lounge Device Flow</title>
+<style>
+@font-face { font-family: KAS; src: local('KoreanAirSansKR'), local('KoreanAirSansKR Regular'), url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #02052e; }
+/* 2048x1152 Figma 좌표계 그대로 사용. 1.02 오버스케일은 스크린샷 가장자리 테두리 숨김용 */
+#stage { position: absolute; left: -64px; top: -36px; width: 2048px; height: 1152px; transform: scale(0.95625); transform-origin: 50% 50%; overflow: hidden; }
+.scene, .layer { position: absolute; inset: 0; }
+.scene { opacity: 0; }
+img { position: absolute; left: 0; top: 0; width: 2048px; height: 1152px; }
+img.bp { left: -24.6px; width: 2097.2px; height: 1152px; } /* 2048x1125 탑승권 화면 cover */
+.txt { position: absolute; font-family: KAS; color: #F5F7FF; white-space: nowrap; letter-spacing: -0.02em; }
+.roll { position: absolute; overflow: hidden; }
+.ring { position: absolute; border-radius: 50%; border: 2px solid #FD5E1B; }
+.outline { position: absolute; border: 3px solid #FD5E1B; border-radius: 28px; box-sizing: border-box; }
+</style></head>
+<body><div id="stage"></div>
+<script>
+// ── 장면 시간표 (40초 정상 버전) — 20초 버전은 이 블록만 다름 ──
+const T = {
+  boarding: { dur: 3.0, tap: 1.0 },
+  scan: { rate: 1, at: 0, tail: 1.2 },
+  welcome: { dur: 3.0, tap: .9 }, choose: { dur: 3.0, tap: .9 },
+  champ: { dur: 4.4, chips: .6, items: 1.3, step: .12 },
+  diet: { dur: 3.8, tap1: .8, tap2: 1.7 },
+  meal: { dur: 3.0, tap: .9 },
+  sleep: { dur: 4.6, k1: .9, k2: 1.9, real: 3.0 },
+  wake: { dur: 3.0, tap: .9 }, method: { dur: 3.0, tap: .9 },
+  schedule: { dur: 7.2, cols: .6, step: .3, tap: 3.6 },
+};
+
+const S = 'screens2x/'; // Figma 2x export (4096x2304)
+// ── 모션 기본값: 앱 UI 기준 (빠르게 시작해서 부드럽게 멈춤, 짧은 거리) ──
+const clamp = p => p < 0 ? 0 : p > 1 ? 1 : p;
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 4);
+const rampO = (u, a, d) => easeOut((u - a) / d);
+// 터치: 0.09초 만에 눌림 → 0.05초 유지 → 0.22초 동안 떼어짐. 반응은 떼는 순간(at + TAP_UP)부터
+const TAP_UP = .14, TAP_END = .36;
+const tap = (u, at) => { const d = u - at; if (d < 0 || d > TAP_END) return 0; if (d < .09) return easeOut(d / .09); if (d < TAP_UP) return 1; return 1 - easeOut((d - TAP_UP) / .22); };
+const stage = document.getElementById('stage');
+
+function el(parent, html) { const d = document.createElement('div'); d.innerHTML = html.trim(); const n = d.firstChild; parent.appendChild(n); return n; }
+function img(parent, src, cls = '') { return el(parent, `<img class="${cls}" src="${S}${src}.png">`); }
+function layer(parent, src, cls = '') { const l = el(parent, '<div class="layer"></div>'); img(l, src, cls); return l; }
+function clip(parent, src, [x, y, w, h], cls = '', radius = 28) {
+  const l = layer(parent, src, cls);
+  l.style.clipPath = `inset(${y}px ${2048 - x - w}px ${1152 - y - h}px ${x}px round ${radius}px)`;
+  l.style.transformOrigin = `${x + w / 2}px ${y + h / 2}px`; return l;
+}
+// 카드 터치: 그 영역만 잠깐 어두워짐 (눌린 상태)
+function touch(parent, src, rect, cls = '') { const l = clip(parent, src, rect, cls); l.style.visibility = 'hidden'; return l; }
+function touchTick(l, u, at) { const t = tap(u, at); l.style.visibility = t > 0 ? 'visible' : 'hidden'; l.style.filter = `brightness(${1 - .16 * t})`; }
+function enter(l, u, a, dy = 8) { const p = rampO(u, a, .35); l.style.opacity = p; l.style.transform = `translateY(${dy * (1 - p)}px)`; }
+
+const scenes = [];
+// btn: [이미지, 버튼 rect, cls, 버튼 없는 배경] — 장면 끝에서 Next 터치 후 다음 화면으로
+function scene(dur, build, btn) {
+  const root = el(stage, '<div class="scene"></div>'), tick = build(root);
+  let press, patch;
+  if (btn) {
+    const [x, y, w, h] = btn[1];
+    patch = clip(root, btn[3] || '02_scanning', [x - 8, y - 8, w + 16, h + 16]); // 눌려 작아질 때 원래 버튼이 비치지 않게 (Champagne은 배경이 더 밝아 전용 이미지)
+    press = clip(root, btn[0], [x + 1, y + 1, w - 2, h - 2], btn[2] || '', h / 2);
+  }
+  const at = dur - .5;
+  scenes.push({ dur, root, tick: u => {
+    const pending = tick && tick(u);
+    if (press) {
+      const t = tap(u, at), vis = t > 0 ? 'visible' : 'hidden';
+      press.style.visibility = patch.style.visibility = vis;
+      press.style.transform = `scale(${1 - .06 * t})`; press.style.filter = `brightness(${1 - .25 * t})`;
+    }
+    return pending;
+  } });
+}
+const NEXT_A = [1599, 1006, 265, 89], NEXT_B = [1570, 1006, 265, 89];
+
+// 선택: 카드 터치 → 떼는 순간 선택 상태로 (0.16초)
+function activate(root, base, sel, rect, at, cls = '') {
+  img(root, base, cls);
+  const t = touch(root, base, rect, cls), s = layer(root, sel, cls);
+  return u => { touchTick(t, u, at); s.style.opacity = rampO(u, at + TAP_UP, .16); };
+}
+
+// 1-1 Boarding Pass → Mobile 터치
+scene(T.boarding.dur, r => activate(r, 'b01_boarding_base', '01_boarding', [262, 330, 738, 512], T.boarding.tap, 'bp'));
+// 1-1 Scanning… — 카메라 영역(Figma preview 1204x650, 422,283)에 실제 촬영 영상 재생 + Figma Live camera 라벨
+const CAM_LEN = 3.9;
+scene(T.scan.at + CAM_LEN / T.scan.rate + T.scan.tail, r => {
+  img(r, '02_scanning');
+  // 카메라 영상: 원본 프레임(PNG 95장, 24fps)을 한 장씩 교체 — video seek 방식은 디코딩 덜 된 프레임이 찍혀 깨짐
+  const CAM_FPS = 24, CAM_FRAMES = 95;
+  const cam = el(r, `<img src="${S}cam/001.png" style="left:422px;top:283px;width:1204px;height:650px;object-fit:cover;border-radius:28px">`);
+  el(r, `<img src="${S}cam_label.png" style="left:455px;top:343px;width:237px;height:57px;border-radius:28.5px">`);
+  const rings = [0, 1, 2].map(() => el(r, '<div class="ring"></div>'));
+  const ol = el(r, '<div class="outline" style="left:420px;top:281px;width:1208px;height:654px"></div>');
+  return u => {
+    const done = T.scan.at + CAM_LEN / T.scan.rate;
+    rings.forEach((g, i) => { const p = ((u + i * .33) % 1); const d = 12 + 30 * p;
+      Object.assign(g.style, { left: 918 - d/2 + 'px', top: 1010 - d/2 + 'px', width: d + 'px', height: d + 'px', opacity: (1 - p) * .7 * (1 - rampO(u, done, .2)) }); });
+    ol.style.opacity = rampO(u, done, .2);
+    // 프레임 단위 렌더: 해당 프레임 이미지가 디코딩될 때까지 대기
+    const ct = Math.min(Math.max((u - T.scan.at) * T.scan.rate, 0), CAM_LEN);
+    const src = `${S}cam/${String(Math.min(CAM_FRAMES, 1 + Math.floor(ct * CAM_FPS))).padStart(3, '0')}.png`;
+    if (cam.getAttribute('src') === src) return;
+    cam.setAttribute('src', src); return cam.decode();
+  };
+});
+// 1-2 Welcome Drink → Alcohol
+scene(T.welcome.dur, r => activate(r, 'b03_welcome_base', '03_welcome_drink', [146, 321, 564, 480], T.welcome.tap), ['03_welcome_drink', NEXT_A]);
+// 1-3 Choose Your Drink → Champagne
+scene(T.choose.dur, r => activate(r, 'b04_choose_base', '04_choose_drink', [98, 294, 596, 558], T.choose.tap), ['04_choose_drink', NEXT_A]);
+// 1-3 Champagne 상세: Dry/Lively → Aromas 순차
+scene(T.champ.dur, r => {
+  img(r, 'b05_champ_base');
+  const chips = layer(r, 'b05_champ_chips');
+  const items = [[790, 590, 150, 64], [830, 660, 200, 210], [1170, 660, 220, 210], [1540, 660, 180, 210]].map(rc => clip(r, '05_champagne', rc));
+  return u => { enter(chips, u, T.champ.chips, 0); items.forEach((it, i) => enter(it, u, T.champ.items + i * T.champ.step)); };
+}, ['05_champagne', NEXT_B, '', 'b05_champ_nobtn']);
+// 1-4 Dietary Preferences → Nut-free, Dairy-free
+scene(T.diet.dur, r => {
+  img(r, 'b06_diet_base');
+  const t1 = touch(r, 'b06_diet_base', [476, 366, 348, 238]), one = layer(r, 'b06_diet_one');
+  const t2 = touch(r, 'b06_diet_one', [848, 366, 348, 238]), two = layer(r, '06_diet');
+  return u => { touchTick(t1, u, T.diet.tap1); one.style.opacity = rampO(u, T.diet.tap1 + TAP_UP, .16); touchTick(t2, u, T.diet.tap2); two.style.opacity = rampO(u, T.diet.tap2 + TAP_UP, .16); };
+}, ['06_diet', NEXT_B]);
+// 1-5 First Meal → Beef Bulgogi (Figma 기준)
+scene(T.meal.dur, r => activate(r, 'b07_meal_base', '07_first_meal', [104, 300, 588, 542], T.meal.tap), ['07_first_meal', NEXT_A]);
+// 1-6 Sleep Time: End 시간 변경 + 휴식 시간 자동 계산 (▲ 버튼 터치로 시간 올림)
+scene(T.sleep.dur, r => {
+  img(r, 'b08_sleep_notime');
+  const up1 = touch(r, 'b08_sleep_notime', [1669, 609, 72, 56]), up2 = touch(r, 'b08_sleep_notime', [1669, 609, 72, 56]);
+  const ends = ['04:30', '05:30', '06:30'], rests = ['3h of rest', '4h of rest', '5h of rest'];
+  const box = el(r, '<div class="roll" style="left:1128px;top:618px;width:320px;height:123px"></div>');
+  const col = el(box, '<div style="position:absolute;left:0;top:0"></div>');
+  ends.forEach((v, i) => el(col, `<div class="txt" style="position:absolute;left:0;top:${i * 123}px;font-size:96px;line-height:123px">${v}</div>`));
+  const restEls = rests.map(v => el(r, `<div class="txt" style="left:1022.5px;top:908px;font-size:44px;line-height:56px;transform:translateX(-50%)">${v}</div>`));
+  const real = layer(r, '08_sleep');
+  const { k1, k2 } = T.sleep;
+  return u => {
+    touchTick(up1, u, k1); touchTick(up2, u, k2);
+    const k = rampO(u, k1 + TAP_UP, .28) + rampO(u, k2 + TAP_UP, .28);
+    col.style.transform = `translateY(${-123 * k}px)`;
+    restEls.forEach((e, i) => e.style.opacity = clamp(1 - Math.abs(k - i) * 1.5));
+    real.style.opacity = u > T.sleep.real ? 1 : 0;
+  };
+}, ['08_sleep', NEXT_B]);
+// 1-7 Wake you for your meal? → Wake me for the meal
+scene(T.wake.dur, r => activate(r, 'b09_wake_base', '09_wake_meal', [272, 384, 720, 476], T.wake.tap), ['09_wake_meal', NEXT_B]);
+// 1-7 How should we wake you? → Crew wake-up
+scene(T.method.dur, r => activate(r, 'b10_method_base', '10_wake_method', [290, 242, 720, 308], T.method.tap), ['10_wake_method', NEXT_A]);
+// 1-8 Flight Schedule: 타임라인 순차 등장 → Confirm 터치 → Plan Confirmed
+scene(T.schedule.dur, r => {
+  img(r, 'b11_schedule_base');
+  const cols = [249, 559, 869, 1179, 1489, 1799].map(cx => clip(r, '11_schedule', [cx - 150, 420, 300, 385]));
+  const btn = clip(r, '11_schedule', [1541, 1007, 321, 87], '', 43);
+  const ok = el(r, `<div style="position:absolute;left:0;width:2048px;top:900px;display:flex;justify-content:center;align-items:center;gap:20px">
+    <svg width="42" height="42" viewBox="0 0 42 42"><circle cx="21" cy="21" r="21" fill="#FD5E1B"/><path d="M13 21.5l5.5 5.5L29.5 16" fill="none" stroke="#0B0F3A" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="txt" style="position:static;font-size:44px;line-height:56px">Plan Confirmed</span></div>`);
+  return u => {
+    cols.forEach((c, i) => enter(c, u, T.schedule.cols + i * T.schedule.step));
+    btn.style.filter = `brightness(${1 - .25 * tap(u, T.schedule.tap)})`;
+    enter(ok, u, T.schedule.tap + TAP_UP + .05);
+  };
+});
+
+// 장면 전환 (fade-through): 공통 배경은 고정, 이전 내용이 빠르게 사라지고 → 새 내용이 감속하며 나타남
+const OUT = .16, IN_A = .08, IN_D = .32, FADE_OUT = .8;
+stage.prepend(Object.assign(document.createElement('img'), { src: S + '00_bg.png' }));
+let acc = 0; scenes.forEach(s => { s.start = acc; acc += s.dur; });
+window.DURATION = acc + IN_A + IN_D;
+window.render = t => {
+  const pending = [];
+  scenes.forEach((s, i) => {
+    const u = t - s.start, next = scenes[i + 1];
+    const visible = u >= 0 && (!next || t < next.start + OUT);
+    s.root.style.display = visible ? 'block' : 'none';
+    if (!visible) return;
+    const pin = i === 0 ? 1 : rampO(u, IN_A, IN_D), pout = next ? 1 - clamp((t - next.start) / OUT) : 1;
+    s.root.style.opacity = pin * pout; s.root.style.transform = `translateY(${5 * (1 - pin)}px)`;
+    s.root.style.zIndex = i;
+    pending.push(s.tick(u));
+  });
+  stage.style.opacity = rampO(t, 0, .5) - clamp((t - (window.DURATION - FADE_OUT)) / FADE_OUT);
+  return Promise.all(pending);
+};
+window.ready = Promise.all([document.fonts.load('96px KAS'), ...[...document.images].map(i => i.decode())]);
+render(0);
+</script></body></html>
