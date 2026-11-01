@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- SYNC 01 설명형 모션그래픽 (가이드 예시 guide/guide.html과 같은 방식)
+     라운지 Plan Ready(54:1251) 항목 → 기내 모니터 타임라인(69:1337). 요소는 노드별 SVG(a/*.svg, 상위 섹션 배경 제거)
+     라운지·모니터 UI가 어두운 화면이라 배경은 밝은 회색 대신 MERIDIAN 네이비 -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(ellipse 80% 75% at 40% 50%, #10236E 0%, #0A1650 50%, #050B2E 100%); font-family: KAS; letter-spacing: -0.02em; }
+  .abs { position: absolute; left: 0; top: 0; }
+  #lounge, #monitor { width: 1920px; height: 1080px; }
+  .L { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  .L img { position: absolute; display: block; }
+  .pill { position: absolute; border-radius: 999px; display: flex; align-items: center; justify-content: center; white-space: nowrap; transform-origin: 0 50%; font-family: KAS; background: #3E6BEB; color: #fff; box-shadow: 0 4px 14px rgba(20,60,200,.35); }
+  .glow { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(200,225,255,.5) 0%, rgba(160,200,255,.16) 45%, rgba(160,200,255,0) 70%); }
+  #title { position: absolute; left: 110px; top: 92px; color: #F1F5FF; font-weight: 700; font-size: 58px; white-space: nowrap; }
+  #sub { position: absolute; left: 110px; top: 172px; color: #AFC0EE; font-size: 26px; white-space: nowrap; }
+  .ch { display: inline-block; white-space: pre; }
+  .cap { position: absolute; left: 1290px; top: 0; width: 600px; display: none; }
+  .cap .head { display: flex; align-items: center; gap: 22px; height: 64px; }
+  .cap .num { flex: none; width: 56px; height: 56px; border-radius: 50%; background: #F84613; color: #fff; font-weight: 700; font-size: 28px; line-height: 1; display: flex; align-items: center; justify-content: center; }
+  .cap .clip { height: 64px; overflow: hidden; }
+  .cap .name { color: #F1F5FF; font-weight: 700; font-size: 48px; line-height: 64px; white-space: nowrap; }
+  .cap .desc { margin: 14px 0 0 78px; width: 500px; color: #AFC0EE; font-size: 26px; line-height: 1.55; word-break: keep-all; }
+</style></head>
+<body>
+<div id="stage">
+  <div id="monitor" class="abs"></div>
+  <div id="lounge" class="abs"></div>
+  <svg width="0" height="0" style="position:absolute"><defs id="defs"></defs></svg>
+  <div id="layers"></div>
+  <div id="title"></div><div id="sub"></div>
+  <div id="caps"></div>
+</div>
+<script>
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeIn = p => { p = clamp(p); return p * p * p; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const backOut = (p, c = 1.4) => { p = clamp(p); return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const popIn = p => backOut(p, .9);
+
+// 화면 좌표: 라운지 2048 프레임(실제 화면 7,3부터 2032폭) / 모니터 1015 프레임
+const KL = 1920 / 2032, Lx = x => (x - 7) * KL, Ly = y => (y - 3) * KL;
+const KM = 1920 / 1015, Mx = x => x * KM, My = y => y * KM - 1;
+Object.assign(document.getElementById('lounge').style, { background: `url(../full/s/L12.png) ${-7 * KL}px ${-3 * KL}px / ${2048 * KL}px ${1152 * KL}px no-repeat` });
+Object.assign(document.getElementById('monitor').style, { background: `url(../full/s/M_home.png) 0 -1px / 1920px ${1144 * 1920 / 2030}px no-repeat` });
+
+// ── 타이밍
+const S1 = 2.5, S2 = 6.4, OUT = 10.8;
+window.DURATION = 12.6;
+
+// ── 라운지 항목 3개 (원 중심 기준 조각) [접두, 원, 아이콘, 글자 render bounds 3줄, 큰 글자, 모니터 도착 아이콘 x]
+const IT = [
+  ['m', [326.7, 410], [362.7, 446], [[374.5, 609.9, 72.9, 25.4], [278.9, 661.3, 266, 43.1], [289.4, 726.5, 244, 22.7]], 'Beef Bulgogi', 245.8],
+  ['s', [940, 410], [976, 446], [[981.6, 609.9, 85.2, 31.7], [878, 663.4, 292, 32.5], [957, 726.5, 135.4, 22.7]], '01:30 – 06:30', 363.9],
+  ['w', [1553.3, 410], [1589.3, 446], [[1564.7, 609.9, 144.4, 31.7], [1483.4, 662.8, 308.4, 41], [1495.3, 726.8, 285.4, 22.4]], 'Crew wake-up', 717.9],
+];
+// 모니터 타임라인(69:1337, 937x185 / 프레임 안 39.4,260.5)
+const TL = { x: 39.4, y: 260.5, w: 937, h: 185 }, TLS = 1.14, TLX = 110, TLY = 600;
+const tlHome = [Mx(TL.x), My(TL.y), KM];
+const iconDst = x => [TLX + (x - TL.x + 29.4) * TLS, TLY + (260.5 - TL.y + 29.4) * TLS];
+const S1C = [250, 580, 910], S1Y = 450, S1S = .85; // 섹션1 배치(원 중심), 배율
+
+const layersEl = document.getElementById('layers'), defs = document.getElementById('defs');
+const mkPill = (parent, text, cx, cy, fs, wt, ls) => {
+  const m = document.createElement('canvas').getContext('2d'); m.font = `${wt} ${fs}px KAS`; const tw = m.measureText(text).width + ls * fs * text.length;
+  const ph = fs * 1.32, pw = tw + fs * 1.0, p = document.createElement('div'); p.className = 'pill';
+  Object.assign(p.style, { left: (cx - pw / 2) + 'px', top: (cy - ph / 2) + 'px', width: pw + 'px', height: ph + 'px', fontSize: fs + 'px', fontWeight: wt, letterSpacing: ls + 'em' });
+  p.innerHTML = `<span>${text}</span>`; parent.appendChild(p); return { p, span: p.firstChild };
+};
+const items = IT.map(([k, circ, icon, texts, big, dstX], i) => {
+  const cx = circ[0] + 84, cy = circ[1] + 84, el = document.createElement('div'); el.className = 'L';
+  const add = (src, x, y, w, h) => { const im = document.createElement('img'); im.src = `a/${k}_${src}.svg`; Object.assign(im.style, { left: (x - cx) + 'px', top: (y - cy) + 'px', width: w + 'px', height: h + 'px' }); el.appendChild(im); return im; };
+  const c = add('circ', circ[0], circ[1], 168, 168), ic = add('icon', icon[0], icon[1], 96, 96), t = texts.map((r, j) => add('t' + (j + 1), ...r));
+  const r2 = texts[1], pill = mkPill(el, big, r2[0] + r2[2] / 2 - cx, r2[1] + r2[3] / 2 - cy, 44, 700, 0);
+  defs.insertAdjacentHTML('beforeend', `<filter id="mb${i}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="0 0"/></filter>`);
+  layersEl.appendChild(el);
+  const g = document.createElement('div'); g.className = 'glow'; layersEl.appendChild(g);
+  return { el, t, pill, blur: defs.lastElementChild.firstElementChild, glow: g, home: [Lx(cx), Ly(cy), KL], s1: [S1C[i], S1Y, S1S], dst: iconDst(dstX), dstS: 58.8 * TLS / 168 };
+});
+// 타임라인 레이어 + 라벨 알약 (First Meal · Rest · Alarm, 18.6px Bold, 자간 -1%)
+const tl = document.createElement('div'); tl.className = 'L'; tl.style.width = TL.w + 'px'; tl.style.height = TL.h + 'px';
+tl.innerHTML = `<img src="a/timeline.svg" style="left:0;top:0;width:${TL.w}px;height:${TL.h}px">`; layersEl.insertBefore(tl, layersEl.firstChild);
+const TLP = [['First Meal', 227, 330, 90, 24], ['Rest', 372, 330, 42, 24], ['Alarm', 721, 329, 54, 24]].map(([s, x, y, w, h]) => mkPill(tl, s, x - TL.x + w / 2, y - TL.y + h / 2, 18.6, 700, -.01));
+
+const TITLE = '비행 계획 연결', SUB = '라운지에서 확정한 계획이 좌석 모니터 타임라인으로 그대로 이어집니다.';
+const CAPS = [['비행 일정 확정', '라운지에서 고른 식사 · 수면 · 기상 계획을 한 화면에서 확정합니다.'],
+              ['좌석 모니터 타임라인', '라운지에서 정한 일정이 좌석 모니터의 타임라인으로 이어집니다.']];
+const chars = (el, s) => [...s].map(c => { const sp = document.createElement('span'); sp.className = 'ch'; sp.textContent = c; el.appendChild(sp); return sp; });
+const TC = chars(document.getElementById('title'), TITLE), SC = chars(document.getElementById('sub'), SUB);
+const CP = CAPS.map(([n, d], i) => { const c = document.createElement('div'); c.className = 'cap';
+  c.innerHTML = `<div class="head"><div class="num">${i + 1}</div><div class="clip"><div class="name">${n}</div></div></div><div class="desc">${d}</div>`;
+  document.getElementById('caps').appendChild(c); return { c, num: c.querySelector('.num'), name: c.querySelector('.name'), desc: c.querySelector('.desc') }; });
+const placeCaps = () => { [[S1Y - 72, S1Y + 217], [TLY, TLY + TL.h * TLS]].forEach(([a, b], i) => { const c = CP[i].c; c.style.display = 'block'; c.style.top = ((a + b) / 2 - c.offsetHeight / 2) + 'px'; c.style.display = 'none'; }); };
+
+// 제자리 중심 스케일 (원 중심이 원점인 조각은 중심 그대로)
+function itemPose(it, i, t) {
+  const [hx, hy, hs] = it.home, [ax, ay, as] = it.s1, st = i * .06;
+  const lift = easeInOut((t - 1.15 - i * .03) / .8);
+  if (t < S1) { // 분해된 화면 → S1 직전 제자리에서 사라짐
+    const k = easeIn((t - (S1 - .42) - i * .03) / .3);
+    return { x: hx, y: hy - 8 * lift, s: hs * (1 - .05 * k), o: (1 - k) * clamp((t - .95) / .2), lift, fly: 0 };
+  }
+  if (t < S2) { const u = t - S1 - st, k = popIn(u / .75); return { x: ax, y: ay + 28 * (1 - chewy(u / .75)), s: as * lerp(.88, 1, k), o: clamp(u / .2), lift: 1, fly: 0 }; }
+  // 섹션2: 아이콘 원이 타임라인 아이콘 자리로 날아감 (위로 볼록)
+  const fk = chewy((t - (S2 + .25) - i * .09) / 1.15);
+  const mx = (ax + it.dst[0]) / 2, my = Math.min(ay, it.dst[1]) - 120;
+  const x = (1 - fk) ** 2 * ax + 2 * (1 - fk) * fk * mx + fk * fk * it.dst[0], y = (1 - fk) ** 2 * ay + 2 * (1 - fk) * fk * my + fk * fk * it.dst[1];
+  const land = easeInOut((t - (S2 + .25 + i * .09 + .75)) / .35);
+  return { x, y, s: lerp(as, it.dstS, fk), o: 1 - land, lift: 1, fly: fk };
+}
+function tlPose(t) {
+  if (t < S2) return { x: TLX, y: TLY, s: TLS, o: 0 };
+  if (t < OUT) { const u = t - S2, k = popIn(u / .75); const f = lerp(.9, 1, k); return { x: TLX + TL.w * TLS * (1 - f) / 2, y: TLY + TL.h * TLS * (1 - f) / 2 + 28 * (1 - chewy(u / .75)), s: TLS * f, o: clamp(u / .2) }; }
+  // 복귀: 모니터 화면의 제자리로 → 화면이 다 나타나면 사라짐
+  const k = chewy((t - OUT) / 1.2);
+  return { x: lerp(TLX, tlHome[0], k), y: lerp(TLY, tlHome[1], k), s: lerp(TLS, tlHome[2], k), o: 1 - clamp((t - OUT - 1.55) / .25) };
+}
+const pillAnim = ({ p, span }, t0, t, back) => {
+  const a = clamp((t - t0) / .55); if (a <= 0 || back <= 0) { p.style.opacity = 0; return; }
+  p.style.opacity = clamp(a * 4) * back;
+  p.style.transform = `perspective(400px) rotateY(${lerp(-100, 0, backOut(a))}deg) rotate(${lerp(-14, 0, easeOut(a * 1.2))}deg) scaleX(${lerp(.35, 1, backOut(a))})`;
+  span.style.opacity = clamp((a - .35) / .3);
+};
+
+function render(t) {
+  // 배경 화면: 라운지 1.0~2.0 사라짐 / 모니터는 복귀 때 나타남
+  document.getElementById('lounge').style.opacity = 1 - easeInOut((t - 1.0) / 1.0);
+  document.getElementById('monitor').style.opacity = easeInOut((t - OUT - .95) / .6);
+  items.forEach((it, i) => {
+    const p = itemPose(it, i, t), q = itemPose(it, i, t - 1 / 60);
+    it.el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${p.s})`; it.el.style.opacity = t > OUT ? 0 : p.o;
+    // 섹션2 비행 중: 글자·알약은 먼저 사라지고 아이콘 원만 날아감
+    const textA = 1 - easeInOut((t - S2) / .3);
+    it.t.forEach(x => x.style.opacity = textA);
+    pillAnim(it.pill, S1 + 1.0 + i * .3, t, textA);
+    const vx = Math.abs(p.x - q.x), vy = Math.abs(p.y - q.y);
+    it.blur.setAttribute('stdDeviation', `${Math.min(vx * .3, 40).toFixed(2)} ${Math.min(vy * .3, 40).toFixed(2)}`);
+    it.el.style.filter = vx + vy > 6 ? `url(#mb${i})` : 'none';
+    // 착지: 타임라인 아이콘이 제자리에서 은은하게 밝아짐
+    const gk = clamp((t - (S2 + .25 + i * .09 + .7)) / 1.1), gs = 58.8 * TLS * 2.6;
+    Object.assign(it.glow.style, { left: (it.dst[0] - gs / 2) + 'px', top: (it.dst[1] - gs / 2) + 'px', width: gs + 'px', height: gs + 'px', opacity: Math.sin(Math.PI * gk) * .9 * (t < OUT ? 1 : 0) });
+  });
+  const tp = tlPose(t);
+  tl.style.transform = `translate(${tp.x}px, ${tp.y}px) scale(${tp.s})`; tl.style.opacity = tp.o;
+  TLP.forEach((pl, j) => pillAnim(pl, S2 + 1.7 + j * .3, t, 1 - easeInOut((t - OUT - .1) / .35)));
+  // 제목
+  const tOut = 1 - easeInOut((t - OUT) / .45);
+  TC.forEach((c, i) => { const a = easeOut((t - 2.55 - i * .04) / .45); c.style.opacity = a * tOut; c.style.filter = `blur(${(1 - a) * 8}px)`; c.style.transform = `translateY(${(1 - a) * 14}px)`; });
+  SC.forEach((c, i) => { const a = easeOut((t - 2.9 - i * .012) / .4); c.style.opacity = a * tOut; c.style.filter = `blur(${(1 - a) * 6}px)`; });
+  // 캡션 (제자리 팝업 · 제자리 사라짐)
+  CP.forEach((c, i) => {
+    const S = i ? S2 : S1, E = i ? OUT + .1 : S2;
+    const nIn = backOut((t - S - .35) / .5), nm = chewy((t - S - .45) / .9), ds = easeOut((t - S - .7) / .6);
+    const out = easeIn((t - (E - .25)) / .3), live = t > S && out < 1;
+    c.c.style.display = live ? 'block' : 'none'; if (!live) return;
+    c.c.style.transform = `scale(${1 - .04 * out})`; c.c.style.opacity = 1 - out;
+    c.num.style.transform = `scale(${clamp(nIn, 0, 2)})`; c.num.style.opacity = clamp(nIn * 3);
+    c.name.style.transform = `translateY(${(1 - nm) * 80}px)`;
+    c.desc.style.opacity = ds; c.desc.style.transform = `translateY(${(1 - ds) * 16}px)`;
+  });
+}
+window.render = render;
+const loadImg = src => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = src; });
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), loadImg('../full/s/L12.png'), loadImg('../full/s/M_home.png'),
+  ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => { placeCaps(); render(0); });
+</script>
+</body></html>

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;background:#02061F;overflow:hidden}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#02061F}
+  .layer{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;will-change:transform,clip-path}
+  .layer img{position:absolute;left:0;width:1920px;display:block}
+  #fx{position:absolute;left:0;top:0;width:1920px;height:1080px;z-index:5}
+  #end{position:absolute;inset:0;opacity:0;z-index:6}
+  #logo{position:absolute;left:50%;top:50%;width:820px;opacity:0;z-index:7}
+  #logo svg{width:100%;height:auto;display:block}
+</style></head>
+<body><div id="stage">
+  <div class="layer" id="A"><img></div>
+  <div class="layer" id="B"><img></div>
+  <canvas id="fx" width="1920" height="1080"></canvas>
+  <div id="end"></div>
+  <div id="logo"></div>
+</div>
+<script>
+// ── 좌표는 스토리보드 카드 기준(가로 1120) → 화면 1920으로 환산
+const S = 1920 / 1120, ORG = [248, 70, 19];
+const IMG = n => `s/${n}.png`;
+
+// ── 이징: 쫀득 = 빠르게 치고 나가 길게 감속 / 1회 오버슈트
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const outExpo = t => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const outBack = (t, s = 1.5) => 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+const inCubic = t => t * t * t;
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const prog = (t, a, d) => clamp((t - a) / d);
+const lerp = (a, b, k) => a + (b - a) * k;
+
+// ── 시퀀스
+// taps: 카드 좌표, boxes: [x,y,w,h], pan: 크루 화면 세로 이동(카드 단위)
+const shots = [];
+const add = (img, t0, t1, o = {}) => shots.push({ img, t0, t1, taps: [], boxes: [], ...o });
+add('L01', 0, 2.5, { taps: [[339, 328]] });
+add('L02', 2.5, 5.5, { boxes: [[221, 145, 678, 375]] });
+add('L03', 5.5, 8, { taps: [[306, 306], [930, 574]] });
+add('L04', 8, 10.5, { taps: [[306, 273], [930, 574]] });
+add('L05', 10.5, 13, { boxes: [[581, 340, 458, 162]], taps: [[930, 574]] });
+add('L06', 13, 16, { taps: [[399, 280], [557, 280], [930, 574]] });
+add('L07', 16, 19, { boxes: [[47, 154, 342, 315]], taps: [[219, 306], [930, 574]] });
+add('L08', 19, 22, { boxes: [[112, 174, 436, 272], [571, 174, 436, 272]], taps: [[481, 350], [941, 350]] });
+add('L09', 22, 24.5, { taps: [[345, 339], [930, 574]] });
+add('L10', 24.5, 27, { taps: [[355, 219], [930, 574]] });
+add('L11', 27, 30, { boxes: [[55, 199, 1011, 274]], taps: [[930, 574]] });
+add('L12', 30, 32, { taps: [[930, 574]] });
+// SYNC 01: Done → 모니터 Home → 크루 12A
+add('M_home', 32, 35.2, { sync: { from: 'L12', a: [930, 574], b: [552, 375], dir: 'top' } });
+add('C_seat12a', 35.2, 38, { sync: { from: 'M_home', a: [552, 375], b: [926, 376], dir: 'right', quick: true } });
+add('M_welcome', 38, 40.5, { taps: [[166, 565]] });
+add('M_home', 40.5, 44, { boxes: [[904, 12, 203, 71], [33, 277, 1053, 223]] });
+add('M_preselect', 44, 46.5, { taps: [[154, 331]] });
+add('M_bulgogi', 46.5, 49, { taps: [[289, 568]], kb: 1.05 });
+add('M_dessert', 49, 50.5, { enter: 'scroll' });
+add('M_plan', 50.5, 52.5, { taps: [[121, 386]] });
+add('M_drink', 52.5, 54, { taps: [[199, 331]] });
+add('M_champ', 54, 56, { boxes: [[586, 398, 461, 130]] });
+add('M_ent', 56, 58, { taps: [[254, 353]] });
+add('M_her', 58, 60, { kb: 1.07 });
+add('M_sleeprem', 60, 62.5, { taps: [[676, 397]], enter: 'pop' });
+add('M_sleep', 62.5, 65, { taps: [[761, 538]], sleep: true });
+add('M_mealrem', 65, 68, { taps: [[465, 397]], enter: 'pop' });
+add('C_update', 68, 72, { sync: { from: 'M_mealrem', a: [463, 395], b: [831, 166], dir: 'right' } });
+add('M_next', 72, 74, { boxes: [[528, 414, 122, 66]] });
+add('M_call', 74, 76, { taps: [[331, 237]] });
+add('M_symptom', 76, 78, { taps: [[221, 248], [563, 248], [938, 580]] });
+add('M_items', 78, 80, { taps: [[221, 287], [563, 287], [939, 581]] });
+add('M_medconf', 80, 81.5, { boxes: [[500, 152, 121, 122]] });
+add('C_water', 81.5, 83, { sync: { from: 'M_medconf', a: [559, 213], b: [238, 340], dir: 'right', quick: true } });
+add('M_pc', 83, 84.5, { taps: [[298, 364]] });
+add('M_fresh', 84.5, 86, { taps: [[221, 287], [563, 287], [939, 581]] });
+add('M_pcconf', 86, 87, { boxes: [[500, 152, 120, 122]] });
+add('C_wash', 87, 88.5, { sync: { from: 'M_pcconf', a: [559, 213], b: [238, 340], dir: 'right', quick: true } });
+add('M_comfort', 88.5, 90.5, { taps: [[298, 467]] });
+add('M_approach', 90.5, 93, { boxes: [[172, 268, 790, 108]], taps: [[563, 320], [331, 408], [938, 580]] });
+add('M_cconf', 93, 95, { kb: 1.04 });
+add('C_assist', 95, 101, { sync: { from: 'M_cconf', a: [559, 213], b: [238, 340], dir: 'right', hero: true } });
+add('C_dash', 101, 104, { pan: [0, 120] });
+add('C_queue', 104, 106, { pan: [0, 80] });
+add('C_map', 106, 108, { taps: [[840, 315]] });
+add('C_detail', 108, 112, { pan: [120, 266], taps: [[989, 792]] });
+add('C_assist', 112, 117, { boxes: [[550, 191, 248, 116]] });
+add('C_log', 117, 119, { pan: [0, 60] });
+add('M_done', 119, 124, { sync: { from: 'C_assist', a: [665, 245], b: [565, 331], dir: 'left', soft: true } });
+add('M_landing', 124, 128, { kb: 1.03 });
+add('M_landing', 128, 131, { surge: true });
+add('END', 131, 137, { logo: true });
+window.DURATION = 137;
+
+// ── 이미지 로드
+const names = [...new Set(shots.flatMap(s => [s.img, s.sync && s.sync.from]).filter(n => n && n !== 'END'))];
+const imgs = {};
+window.ready = Promise.all(names.map(n => new Promise(r => { const i = new Image(); i.onload = r; i.src = IMG(n); imgs[n] = i; })))
+  .then(() => { document.getElementById('logo').innerHTML = '<img src="logo_clean.svg" style="width:100%;display:block">'; return new Promise(r => document.querySelector('#logo img').onload = r); });
+
+const A = document.getElementById('A'), Bl = document.getElementById('B');
+const cv = document.getElementById('fx'), g = cv.getContext('2d');
+const geo = n => { const i = imgs[n]; const h = 1920 * i.naturalHeight / i.naturalWidth; return { h, top: h < 1080 ? (1080 - h) / 2 : 0 }; };
+const panOf = (s, k) => s.pan ? lerp(s.pan[0], s.pan[1], k) * S : (s.sync && s.img.startsWith('C_') ? Math.max(0, s.sync.b[1] * S - 620) : 0);
+const P = (s, pt, k) => { const { top } = geo(s.img); return [pt[0] * S, pt[1] * S + top - panOf(s, k)]; };
+
+function setLayer(L, name, { y = 0, scale = 1, ox = 960, oy = 540, op = 1, filter = '', clip = 'none' } = {}) {
+  const im = L.firstChild; if (im.dataset.n !== name) { im.src = IMG(name); im.dataset.n = name; }
+  const { h, top } = geo(name);
+  im.style.height = h + 'px'; im.style.top = (top - y) + 'px';
+  L.style.transformOrigin = `${ox}px ${oy}px`; L.style.transform = `scale(${scale})`;
+  L.style.opacity = op; L.style.filter = filter; L.style.clipPath = clip; L.style.display = 'block';
+}
+
+// ── 그리기 도구
+function tap(x, y, k) { // 반투명 흰 손가락 자국 + 옅은 파동
+  if (k <= 0 || k >= 1) return;
+  const a = k < .25 ? k / .25 : 1 - (k - .25) / .75;
+  const press = k < .12 ? 1 - .15 * (k / .12) : .85 + .15 * outBack(clamp((k - .12) / .3));
+  g.fillStyle = `rgba(255,255,255,${.42 * a})`; g.beginPath(); g.arc(x, y, 40 * press, 0, 7); g.fill();
+  const r = 40 + 70 * outExpo(clamp((k - .12) / .8));
+  g.strokeStyle = `rgba(255,255,255,${.35 * (1 - outExpo(clamp((k - .12) / .8)))})`; g.lineWidth = 2; g.beginPath(); g.arc(x, y, r, 0, 7); g.stroke();
+}
+function rrect(x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function lift(x, y, w, h, k, fade) { // 어둡게 안 함: 떠오르는 그림자 + 흰 테두리, 스프링 등장
+  if (k <= 0) return;
+  const s = outBack(clamp(k / .5), 1.2), a = clamp(k / .25) * fade, pad = 14;
+  const cx = x + w / 2, cy = y + h / 2, W = (w + pad * 2) * lerp(.94, 1, s), H = (h + pad * 2) * lerp(.94, 1, s);
+  g.save(); g.shadowColor = `rgba(4,8,40,${.45 * a})`; g.shadowBlur = 40; g.shadowOffsetY = 18;
+  g.strokeStyle = `rgba(255,255,255,${.9 * a})`; g.lineWidth = 2.5; rrect(cx - W / 2, cy - H / 2, W, H, 22); g.stroke(); g.restore();
+}
+function halftone(x, y, R, a) { // 착지 지점에만
+  if (a <= 0) return;
+  g.fillStyle = `rgba(${ORG},${.85 * a})`;
+  for (let j = -R; j <= R; j += 10) for (let i = -R; i <= R; i += 10) {
+    const px = i + ((j / 10) % 2 ? 5 : 0), d = Math.hypot(px, j), s = 4.2 * Math.pow(Math.max(0, 1 - d / R), 1.3);
+    if (s > .6) { g.beginPath(); g.arc(x + px, y + j, s, 0, 7); g.fill(); }
+  }
+}
+const bz = (a, c, b, t) => [(1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0], (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1]];
+function comet(a, c, b, t, len, w) { // 점 뒤에 짧은 꼬리만
+  const n = 18;
+  for (let i = 0; i < n; i++) {
+    const t0 = t - len * (1 - i / n), t1 = t - len * (1 - (i + 1) / n); if (t1 < 0) continue;
+    const p = bz(a, c, b, Math.max(0, t0)), q = bz(a, c, b, t1), k = (i + 1) / n;
+    g.strokeStyle = `rgba(${ORG},${.9 * k * k})`; g.lineWidth = w * k; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+  }
+}
+function point(x, y, r, glow) {
+  g.save(); g.shadowColor = `rgba(${ORG},.9)`; g.shadowBlur = glow;
+  g.fillStyle = '#FFD9C7'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  g.strokeStyle = `rgb(${ORG})`; g.lineWidth = 3; g.stroke(); g.restore();
+}
+// 휘어진 와이프 경계 (e = 경계 기준 x)
+const wipePath = (e, flip) => flip
+  ? `path('M ${1920 - e - 140} 0 C ${1920 - e + 40} 380, ${1920 - e - 90} 720, ${1920 - e + 70} 1080 L -400 1080 L -400 0 Z')`
+  : `path('M ${e + 140} 0 C ${e - 40} 380, ${e + 90} 720, ${e - 70} 1080 L 2400 1080 L 2400 0 Z')`;
+function wipeEdge(e, a, flip) {
+  g.save(); g.translate(flip ? 1920 : 0, 0); g.scale(flip ? -1 : 1, 1);
+  g.shadowColor = `rgba(2,6,31,${.5 * a})`; g.shadowBlur = 50; g.shadowOffsetX = -12;
+  g.strokeStyle = `rgba(${ORG},${.55 * a})`; g.lineWidth = 2.5;
+  g.beginPath(); g.moveTo(e + 140, 0); g.bezierCurveTo(e - 40, 380, e + 90, 720, e - 70, 1080); g.stroke(); g.restore();
+}
+
+// ── 프레임
+window.render = function (t) {
+  g.clearRect(0, 0, 1920, 1080);
+  const i = shots.findIndex(s => t >= s.t0 && t < s.t1), s = shots[i < 0 ? shots.length - 1 : i], prev = shots[i - 1];
+  const d = s.t1 - s.t0, lt = t - s.t0, k = clamp(lt / d);
+  Bl.style.display = 'none'; document.getElementById('end').style.opacity = 0; document.getElementById('logo').style.opacity = 0;
+
+  if (s.logo) return renderEnd(lt);
+  if (s.sync) return renderSync(s, lt, d);
+
+  // 카메라: 강조 박스가 있으면 그쪽으로 살짝 밀고 들어감, 없으면 미세한 켄 번스
+  const { top } = geo(s.img);
+  let ox = 960, oy = 540, sc = 1;
+  
+  const pan = panOf(s, 0);
+  // 같은 디바이스 안 전환: 다음 화면이 짧게 올라오며 겹침
+  const ein = chewy(prog(lt, 0, .8)), sameDev = prev && prev.img[0] === s.img[0] && !s.surge;
+  let y = pan, op = 1, scale = sc;
+  if (sameDev && !prev.logo && i > 0 && lt < .8) {
+    setLayer(Bl, prev.img, { y: panOf(prev, 0) });
+    op = clamp(lt / .35);
+    // 이전 화면이 아래, 새 화면이 위
+    Bl.style.zIndex = 0; A.style.zIndex = 1;
+  }
+  const filter = s.sleep ? `brightness(${lerp(.62, 1, outExpo(prog(lt, d - .9, .8)))})` : '';
+  setLayer(A, s.img, { y, scale, ox, oy, op, filter });
+
+  // 박스 강조 → 탭 순서
+  const toStage = (x, yy) => { const px = x * S, py = yy * S + top - pan; return [ox + (px - ox) * scale, oy + (py - oy) * scale]; };
+  if (0) s.boxes.forEach((b, j) => { const [x0, y0] = toStage(b[0], b[1]), [x1, y1] = toStage(b[0] + b[2], b[1] + b[3]); lift(x0, y0, x1 - x0, y1 - y0, prog(lt, d * .12 + j * .25, d), 1 - prog(lt, d - .45, .4)); });
+  const n = s.taps.length;
+  s.taps.forEach((p, j) => { const tt = n === 1 ? d - .9 : lerp(d * .3, d - .75, j / (n - 1)); const [x, yy] = toStage(p[0], p[1]); tap(x, yy, prog(lt, tt, .7)); });
+
+  if (s.surge) renderSurge(lt, d);
+};
+
+function renderSync(s, lt, d) {
+  const from = shots.find(x => x.img === s.sync.from && x.t1 <= s.t0 && !x.sync) || { img: s.sync.from, taps: [], boxes: [] };
+  const q = s.sync.quick ? .62 : 1, hero = s.sync.hero ? 1.25 : 1, soft = s.sync.soft;
+  const fs = { img: s.sync.from, pan: from.pan ? [from.pan[1], from.pan[1]] : null }, ts = s;
+  const a = P(fs, s.sync.a, 0), b = P(ts, s.sync.b, 0);
+  // 타이밍(초)
+  const T1 = .35 * q * hero, T2 = T1 + .75 * q, W0 = T1 + .35 * q, W1 = W0 + .9 * q, T3 = W0 + .25 * q, T4 = T3 + .8 * q * hero;
+  const flip = s.sync.dir === 'left';
+  // 출발 화면 / 도착 화면(와이프)
+  setLayer(Bl, fs.img, { y: panOf(fs, 0) });
+  Bl.style.zIndex = 0; A.style.zIndex = 1;
+  const wk = prog(lt, W0, W1 - W0), e = lerp(2060, -260, chewy(wk));
+  setLayer(A, ts.img, { y: panOf(ts, 0), clip: wk >= 1 ? 'none' : wipePath(e, flip) });
+  if (wk > 0 && wk < 1) wipeEdge(e, Math.sin(Math.PI * wk), flip);
+  // 출발: 응축(예비동작) → 튀어나감
+  const exit = s.sync.dir === 'top' ? [a[0] + 260, -80] : flip ? [-80, a[1] - 160] : [2000, a[1] - 180];
+  const c1 = [(a[0] + exit[0]) / 2, Math.min(a[1], exit[1]) - 220];
+  if (lt < T1) { const k = lt / T1; point(a[0], a[1], lerp(16, 9, inCubic(k)) * (soft ? .7 : 1), 30); g.strokeStyle = `rgba(${ORG},${.5 * (1 - k)})`; g.lineWidth = 2; g.beginPath(); g.arc(a[0], a[1], lerp(60, 14, outExpo(k)), 0, 7); g.stroke(); }
+  else if (lt < T2) { const k = chewy((lt - T1) / (T2 - T1)) * .55 + inCubic((lt - T1) / (T2 - T1)) * .45; comet(a, c1, exit, k, .32, soft ? 6 : 9); const p = bz(a, c1, exit, k); point(p[0], p[1], soft ? 8 : 11, 40); }
+  // 도착: 반대편에서 꼬리를 끌고 들어와 착지
+  const ent = s.sync.dir === 'top' ? [b[0] - 300, -80] : flip ? [2000, b[1] - 200] : [-80, b[1] - 200];
+  const c2 = [(ent[0] + b[0]) / 2, Math.min(ent[1], b[1]) - 200];
+  if (lt >= T3 && lt < T4) { const k = chewy((lt - T3) / (T4 - T3)); comet(ent, c2, b, k, .3, soft ? 6 : 9); const p = bz(ent, c2, b, k); point(p[0], p[1], soft ? 8 : 11, 40); }
+  if (lt >= T4) {
+    const k = lt - T4, sq = 1 + .35 * Math.exp(-k * 9) * Math.cos(k * 22); // 착지 순간 찌그러졌다 복원
+    halftone(b[0], b[1], 70 * outExpo(clamp(k / .5)) * (soft ? .7 : 1), 1 - clamp((k - .5) / .9));
+    for (const [dl, R, al] of [[0, 90, .6], [.12, 150, .3]]) { const rk = clamp((k - dl) / .8); if (rk > 0 && rk < 1) { g.strokeStyle = `rgba(${ORG},${al * (1 - rk)})`; g.lineWidth = 2; g.beginPath(); g.arc(b[0], b[1], 16 + R * outExpo(rk), 0, 7); g.stroke(); } }
+    g.save(); g.translate(b[0], b[1]); g.scale(sq, 2 - sq); point(0, 0, (soft ? 8 : 11) * (1 - .4 * clamp((k - 1.2) / .6)), 36); g.restore();
+  }
+}
+
+function renderSurge(lt, d) { // 네이비→오렌지 그라데이션이 두 겹으로 밀려 올라옴
+  for (const [dl, alpha] of [[.15, .75], [0, 1]]) {
+    const k = chewy(prog(lt, dl, d - .15)), top = lerp(1180, -260, k);
+    const gr = g.createLinearGradient(0, top, 0, top + 1500);
+    gr.addColorStop(0, 'rgba(36,48,122,0)'); gr.addColorStop(.08, `rgba(46,58,140,${.95 * alpha})`); gr.addColorStop(.22, `rgba(251,109,81,${alpha})`); gr.addColorStop(.45, `rgba(248,70,19,${alpha})`); gr.addColorStop(1, `rgba(255,176,143,${alpha})`);
+    g.save(); g.filter = 'blur(30px)'; g.fillStyle = gr; g.beginPath(); g.ellipse(960 + (dl ? 140 : -100), top + 700, 1500, 700, 0, Math.PI, 0, false); g.lineTo(2600, 2000); g.lineTo(-700, 2000); g.closePath(); g.fill(); g.restore();
+  }
+}
+
+function renderEnd(lt) {
+  A.style.display = 'none';
+  const end = document.getElementById('end'), logo = document.getElementById('logo');
+  // 그라데이션이 덮은 뒤 위는 네이비로 가라앉고 아래 오렌지 수평선만 남음
+  const sink = outExpo(clamp(lt / 1.8));
+  end.style.opacity = 1;
+  end.style.background = `linear-gradient(180deg, #02061F ${lerp(-60, 0, sink)}%, #0B1445 ${lerp(-40, 55, sink)}%, #2A2466 ${lerp(-20, 82, sink)}%, #F84613 ${lerp(0, 100, sink)}%, #FB6D51 ${lerp(60, 100, sink)}%)`;
+  // 로고: 아래에서 밀려 올라오며 블러 20→0, 1회 오버슈트
+  const k = clamp((lt - .5) / 1.1), m = outBack(k, 1.3);
+  logo.style.opacity = clamp((lt - .5) / .45);
+  logo.style.filter = `blur(${lerp(20, 0, outExpo(k))}px)`;
+  logo.style.transform = `translate(-50%, calc(-50% + ${lerp(90, 0, chewy(k))}px)) scale(${lerp(.94, 1, m)})`;
+}
+</script></body></html>

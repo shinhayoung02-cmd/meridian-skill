@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;background:#02061F;overflow:hidden}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#02061F}
+  .layer{position:absolute;inset:0;overflow:hidden}
+  .layer img{position:absolute;left:-8px;top:-5px;width:1936px;height:1090px} /* 가장자리 흰 줄 숨김용 오버스캔 */
+  #fx{position:absolute;inset:0;z-index:5}
+</style></head>
+<body><div id="stage">
+  <div class="layer" id="from"><img></div>
+  <div class="layer" id="to" style="z-index:1"><img></div>
+  <canvas id="fx" width="1920" height="1080"></canvas>
+</div>
+<script>
+// SYNC 한 구간만 렌더: #{"from":"이미지","to":"이미지","a":[x,y],"b":[x,y],"dir":"top|right|left","hold":0.4,"tail":0.8}
+// 좌표는 1920x1080 화면 기준
+const P = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+const ORG = [248, 70, 19];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, d) => clamp((t - a) / d);
+const inCubic = t => t * t * t;
+// 쫀득 키 (레퍼런스 튜토리얼: 중간 키 → 앞은 확 치고 나가고 뒤는 길게 서서히 멈춤)
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+
+const fromL = document.getElementById('from'), toL = document.getElementById('to');
+fromL.firstChild.src = P.from; toL.firstChild.src = P.to;
+const cv = document.getElementById('fx'), g = cv.getContext('2d');
+const bz = (a, c, b, t) => [(1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0], (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1]];
+
+function comet(a, c, b, t, len, w) { // 하나로 이어진 꼬리: 점점 가늘어지며 그라데이션으로 사라짐
+  const n = 48, L = [], Rr = [];
+  for (let i = 0; i <= n; i++) {
+    const tt = Math.max(0, t - len * (1 - i / n)), p = bz(a, c, b, tt), q = bz(a, c, b, Math.min(1, tt + .002));
+    const dx = q[0] - p[0], dy = q[1] - p[1], m = Math.hypot(dx, dy) || 1, hw = w / 2 * Math.pow(i / n, .8);
+    L.push([p[0] - dy / m * hw, p[1] + dx / m * hw]); Rr.push([p[0] + dy / m * hw, p[1] - dx / m * hw]);
+  }
+  const tail = bz(a, c, b, Math.max(0, t - len)), head = bz(a, c, b, t);
+  const gr = g.createLinearGradient(tail[0], tail[1], head[0], head[1]);
+  gr.addColorStop(0, `rgba(${ORG},0)`); gr.addColorStop(.55, `rgba(${ORG},.45)`); gr.addColorStop(1, `rgba(${ORG},.95)`);
+  g.fillStyle = gr; g.beginPath(); L.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); Rr.reverse().forEach(p => g.lineTo(p[0], p[1])); g.closePath(); g.fill();
+}
+function point(x, y, r) {
+  g.save(); g.shadowColor = `rgba(${ORG},.85)`; g.shadowBlur = 28;
+  g.fillStyle = '#FFE1D2'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  g.strokeStyle = `rgb(${ORG})`; g.lineWidth = 3; g.stroke(); g.restore();
+}
+// 착지 하프톤: 동심원 위에 점을 배치, 안쪽은 크고 바깥은 작게 — 퍼지면서 사라짐
+function halftone(x, y, k) {
+  if (k <= 0 || k >= 1) return;
+  const spread = chewy(clamp(k * .9)), fade = 1 - clamp((k - .35) / .65);
+  for (let ring = 1; ring <= 8; ring++) {
+    const r = (26 + ring * 21) * (.55 + .45 * spread), n = Math.round(ring * 8);
+    const size = 5.2 * Math.pow(1 - ring / 9, 1.2) * (1 - .35 * spread);
+    const w = Math.pow((ring - 1) / 7, 1.1), col = [lerp(ORG[0], 255, w), lerp(ORG[1], 255, w), lerp(ORG[2], 255, w)].map(Math.round);
+    g.fillStyle = `rgba(${col},${.9 * fade * (1 - ring / 12)})`;
+    for (let j = 0; j < n; j++) { const an = j / n * Math.PI * 2 + ring * .35 + spread * .25; g.beginPath(); g.arc(x + Math.cos(an) * r, y + Math.sin(an) * r, size, 0, 7); g.fill(); }
+  }
+}
+// 휘어진 와이프 경계
+const wipeClip = (e, flip) => flip
+  ? `path('M ${1920 - e - 140} 0 C ${1920 - e + 40} 380, ${1920 - e - 90} 720, ${1920 - e + 70} 1080 L -400 1080 L -400 0 Z')`
+  : `path('M ${e + 140} 0 C ${e - 40} 380, ${e + 90} 720, ${e - 70} 1080 L 2400 1080 L 2400 0 Z')`;
+function wipeEdge(e, a, flip) {
+  g.save(); g.translate(flip ? 1920 : 0, 0); g.scale(flip ? -1 : 1, 1);
+  g.shadowColor = `rgba(2,6,31,${.45 * a})`; g.shadowBlur = 40; g.shadowOffsetX = -10;
+  g.strokeStyle = `rgba(${ORG},${.5 * a})`; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(e + 140, 0); g.bezierCurveTo(e - 40, 380, e + 90, 720, e - 70, 1080); g.stroke(); g.restore();
+}
+
+const H = P.hold ?? .4, T1 = H + .4, T2 = T1 + .95, W0 = T1 + .4, W1 = W0 + 1.25, T3 = W0 + .4, T4 = T3 + 1.15;
+window.DURATION = T4 + (P.tail ?? 1.6);
+window.ready = Promise.all([fromL.firstChild.decode(), toL.firstChild.decode()]);
+
+window.render = t => {
+  g.clearRect(0, 0, 1920, 1080);
+  const a = P.a, b = P.b, flip = P.dir === 'left';
+  const wk = prog(t, W0, W1 - W0), e = lerp(2060, -260, chewy(wk));
+  toL.style.clipPath = wk <= 0 ? 'inset(0 0 0 100%)' : wk >= 1 ? 'none' : wipeClip(e, flip);
+  if (wk > 0 && wk < 1) wipeEdge(e, Math.sin(Math.PI * wk), flip);
+  // 출발: 버튼에서 점이 생기며 살짝 응축(예비동작) → 휙 빠져나감
+  const exit = P.dir === 'top' ? [a[0] + 300, -90] : flip ? [-90, a[1] - 160] : [2010, a[1] - 180];
+  const c1 = [(a[0] + exit[0]) / 2, Math.min(a[1], exit[1]) - 200];
+  if (t >= H && t < T1) { const k = (t - H) / (T1 - H); point(a[0], a[1], lerp(4, 14, chewy(k * 1.6)) - 5 * inCubic(k)); }
+  else if (t >= T1 && t < T2) { const k = (t - T1) / (T2 - T1), m = .5 * chewy(k) + .5 * inCubic(k); comet(a, c1, exit, m, .38, 10); const p = bz(a, c1, exit, m); point(p[0], p[1], 10); }
+  // 도착: 반대편에서 꼬리를 끌고 들어와 착지
+  const ent = P.dir === 'top' ? [b[0] - 320, -90] : flip ? [2010, b[1] - 200] : [-90, b[1] - 200];
+  const c2 = [(ent[0] + b[0]) / 2, Math.min(ent[1], b[1]) - 180];
+  if (t >= T3 && t < T4) { const k = chewy((t - T3) / (T4 - T3)); comet(ent, c2, b, k, .38, 10); const p = bz(ent, c2, b, k); point(p[0], p[1], 10); }
+  if (t >= T4) {
+    const k = t - T4;
+    halftone(b[0], b[1], k / 1.8);
+    const sq = 1 + .3 * Math.exp(-k * 9) * Math.cos(k * 22); // 착지 순간 살짝 찌그러졌다 복원
+    g.save(); g.translate(b[0], b[1]); g.scale(sq, 2 - sq); point(0, 0, 10 * (1 - clamp((k - .6) / .3))); g.restore();
+  }
+};
+</script></body></html>

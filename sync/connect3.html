@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- SYNC 01 연결 설명 v3: 글씨=youtu.be/cOZPua98ILA 방식(단어별 작게→톡 커짐, 강조어는 색이 왼→오로 차오름), 점선·비행기=youtu.be/fmXysiwgB5E 방식(시작 점 → 비행기가 머리에서 그으며 끝까지)
+     v2 — 사용자 Figma 수정본(영상 자료 요소 302:1441) 수치 그대로
+     제목 2줄 64px 2톤 / 설명 30px('타임라인' 파란 볼드) / 라벨 카드 위 / 카드 908x512 / 점선 곡선 + 비행기 + 빛나는 점 -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; font-family: KAS; letter-spacing: -0.02em; background: linear-gradient(#FFFFFF, #E9EDF4); }
+  .card { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; will-change: transform; }
+  .card div { width: 100%; height: 100%; background-repeat: no-repeat; }
+  .w { display: inline-block; white-space: pre; transform-origin: 50% 70%; }
+  .seg { -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #dot0 { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #9FBAF5; }
+  #head { position: absolute; left: 0; width: 1920px; top: 132px; text-align: center; font-weight: 700; font-size: 64px; line-height: 82px; }
+  #sub { position: absolute; left: 0; width: 1920px; top: 311px; text-align: center; font-size: 30px; line-height: 38px; color: #5F6A85; white-space: nowrap; }
+  .lab { position: absolute; top: 442px; font-size: 26px; line-height: 31px; color: #6B7387; white-space: nowrap; transform: translateX(-50%); }
+  .lab b { color: #06176A; font-weight: 700; }
+  #arc { position: absolute; left: 0; top: 0; overflow: visible; }
+  #glow { position: absolute; left: 1053px; top: 445px; width: 37px; height: 37px; border-radius: 50%; background: rgb(159,186,245); filter: blur(4.65px); }
+</style></head>
+<body>
+<div id="stage">
+  <div id="cardL" class="card"><div id="imgL"></div></div>
+  <div id="cardM" class="card"><div id="imgM"></div></div>
+  <div id="head"></div><div id="sub"></div>
+  <div id="labL" class="lab"><b>라운지 패드</b> · Plan Ready</div>
+  <div id="labM" class="lab"><b>좌석 모니터</b> · My Journey</div>
+  <div id="glow"></div><div id="dot0"></div>
+  <svg id="arc" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <!-- Vector 138 (302:1568) 원본 경로, 프레임 위치(790.5, 412.876)로 이동 -->
+    <defs><clipPath id="reveal"><rect id="revealRect" x="780" y="380" width="0" height="120"/></clipPath><mask id="unused"><path id="revealPath" transform="translate(790.5 412.876)" d="M1.50049 61.9618C1.50049 61.9618 27.0707 2.68542 139.812 1.52314C252.553 0.36086 275.799 43.3653 275.799 43.3653" stroke="#fff" stroke-width="12" fill="none" stroke-linecap="round"/></mask></defs>
+    <g clip-path="url(#reveal)"><path id="arcPath" transform="translate(790.5 412.876)" d="M1.50049 61.9618C1.50049 61.9618 27.0707 2.68542 139.812 1.52314C252.553 0.36086 275.799 43.3653 275.799 43.3653" stroke="#9FBAF5" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 10" fill="none"/></g>
+    <!-- 비행기 (302:1571, 회전 포함된 원본) -->
+    <g id="plane"><path transform="translate(832.531 399.453)" d="M30.7965 57.6384L36.5852 55.6473L42.2355 27.737L55.2601 23.2572C56.4115 22.8612 57.3701 22.0185 57.925 20.9145C58.4799 19.8106 58.5856 18.5359 58.2189 17.3707C57.8522 16.2056 57.0431 15.2455 55.9696 14.7016C54.8961 14.1578 53.6461 14.0747 52.4947 14.4708L39.4701 18.9506L19.0713 5.35126e-06L13.2826 1.99104L27.8927 22.9327L10.5267 28.9058L4.34156 24.5415L4.16791e-05 26.0347L6.12064 35.2901L6.45256 46.5364L10.7941 45.0431L13.292 37.6922L30.6581 31.7191L30.7965 57.6384Z" fill="#06176A"/></g>
+  </svg>
+</div>
+<script>
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const popIn = p => { p = clamp(p); const c = .9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+window.DURATION = 8.8;
+
+// ── 카드 (Figma 302:1445 / 302:1483: 908x512, 44·968 / 488, 모서리 16.72, 그림자 y28.67 r71.68 a.28)
+const CW = 908, CY = 488, LX = 44, MX = 968, RAD = 16.724, SHY = 28.67, SHR = 71.675;
+const L = { w: 2032, h: 1146 }, M = { w: 1015, h: 572 };
+const cardL = document.getElementById('cardL'), cardM = document.getElementById('cardM');
+Object.assign(cardL.style, { width: L.w + 'px', height: L.h + 'px' }); Object.assign(cardM.style, { width: M.w + 'px', height: M.h + 'px' });
+Object.assign(document.getElementById('imgL').style, { background: `url(../full/s/L12.png) -7px -3px / 2048px 1152px no-repeat` });
+Object.assign(document.getElementById('imgM').style, { background: `url(../full/s/M_home.png) 0 0 / 1015px 572px no-repeat` });
+const sL = CW / L.w, sM = CW / M.w, fullL = 1920 / L.w, fullM = 1920 / M.w;
+document.getElementById('labL').style.left = (LX + CW / 2) + 'px'; document.getElementById('labM').style.left = (MX + CW / 2) + 'px';
+
+// ── 제목 2줄 / 설명 (Figma 색 구간 그대로)
+const D = '#06176A', G = '#5F6A85', B = '#376BDB';
+const words = (el, lines) => { const out = []; lines.forEach((line, li) => { if (li) el.appendChild(document.createElement('br'));
+  line.forEach((segs, wi) => { const w = document.createElement('span'); w.className = 'w';
+    const ss = segs.map(([txt, c0, c1, wt]) => { const sp = document.createElement('span'); sp.className = 'seg'; sp.textContent = txt; if (wt) sp.style.fontWeight = wt; w.appendChild(sp); return { sp, c0, c1 }; });
+    el.appendChild(w); if (wi < line.length - 1) el.appendChild(document.createTextNode(' ')); out.push({ w, ss }); }); }); return out; };
+// 제목: '라운지' '기내 여정'은 회색으로 나왔다가 남색으로 차오름 (최종색 = Figma 302:1567)
+const HW = words(document.getElementById('head'), [
+  [[['라운지', G, D], ['에서', G, G]], [['정한', G, G]], [['계획이,', G, G]]],
+  [[['기내', G, D]], [['여정', G, D], ['으로', G, G]], [['이어집니다.', G, G]]]]);
+// 설명: '타임라인'은 회색으로 나왔다가 파랑 볼드로 (Figma 302:1444)
+const SW = words(document.getElementById('sub'), [[...'라운지 패드에서 확정한 계획이 좌석 모니터'.split(' ').map(x => [[x, G, G]]), [['타임라인', G, B, 700], ['에', G, G]], [['그대로', G, G]], [['표시됩니다.', G, G]]]]);
+const fill = (seg, p) => { seg.sp.style.backgroundImage = 'linear-gradient(90deg, ' + seg.c1 + ' ' + (p * 100) + '%, ' + seg.c0 + ' ' + (p * 100) + '%)'; };
+// 단어 등장: 작게(0.35)·흐릿 → 톡 커짐(살짝 넘침), 왼쪽부터 하나씩
+const pop = k => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+const wordAnim = (list, t0, step, t, out) => list.forEach(({ w }, i) => { const u = (t - t0 - i * step) / .32, k = clamp(u);
+  w.style.opacity = clamp(u * 2.5) * (1 - out); w.style.transform = 'scale(' + (u <= 0 ? .35 : lerp(.35, 1, pop(k))) + ')'; });
+
+// ── 점선 곡선 위 비행기: 곡선 시작점에서 출발해 Figma 위치에 멈춤(진행 방향으로 회전)
+const arc = document.getElementById('revealPath'), LEN = arc.getTotalLength();
+const AT = (u) => { const p = arc.getPointAtLength(u * LEN); return [p.x + 790.5, p.y + 412.876]; };
+const PC = [832.531 + 29.5, 399.453 + 29]; // Figma 비행기 중심
+let U0 = 0, best = 1e9; for (let i = 0; i <= 400; i++) { const [x, y] = AT(i / 400), d = Math.hypot(x - PC[0], y - PC[1]); if (d < best) { best = d; U0 = i / 400; } }
+const P0 = AT(U0), OFF = [PC[0] - P0[0], PC[1] - P0[1]];
+const ang = u => { const a = AT(Math.max(0, u - .01)), b = AT(Math.min(1, u + .01)); return Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI; };
+const A0 = ang(U0);
+let UE = 1; for (let i = 0; i <= 1000; i++) { if (AT(i / 1000)[0] >= 1016) { UE = i / 1000; break; } } // 비행기 멈춤 지점 (사용자 지정: 빛 점 앞)
+
+// ── 타이밍
+const SHRINK = .6, MPOP = 1.55, HEADT = 1.75, SUBT = 2.55, LABT = 2.2, ARC = 3.2, OUT = 6.8;
+
+function place(el, x, y, s, o, sh) { el.style.transform = `translate(${x}px, ${y}px) scale(${s})`; el.style.opacity = o;
+  el.style.borderRadius = (RAD / s * sh) + 'px'; el.style.boxShadow = `0 ${SHY / s}px ${SHR / s}px rgba(10,30,90,${(.28 * sh).toFixed(3)})`; }
+
+function render(t) {
+  const out = easeInOut((t - OUT) / .45);
+  // 라운지: 전체 화면 → 왼쪽 카드 / 끝에 사라짐
+  { const k = chewy((t - SHRINK) / 1.15); place(cardL, lerp(0, LX, k), lerp(0, CY, k), lerp(fullL, sL, k), 1 - out, k * (1 - out)); }
+  // 모니터: 제자리 팝업 → 끝에 전체 화면으로 (다음 장면)
+  if (t < OUT) { const u = t - MPOP, k = popIn(u / .8), f = lerp(.9, 1, k); place(cardM, MX + CW * (1 - f) / 2, CY + M.h * sM * (1 - f) / 2 + 30 * (1 - chewy(u / .8)), sM * f, clamp(u / .2), 1); }
+  else { const k = chewy((t - OUT - .15) / 1.2); place(cardM, lerp(MX, 0, k), lerp(CY, -1, k), lerp(sM, fullM, k), 1, 1 - k); }
+  cardM.style.zIndex = t >= OUT ? 5 : 0;
+  // 글자: 블러 풀리며 하나씩
+  wordAnim(HW, HEADT, .1, t, out); wordAnim(SW, SUBT, .045, t, out);
+  // 강조어 색 차오름: 줄 다 나온 뒤 왼→오
+  const HEND = HEADT + HW.length * .1 + .25, SEND = SUBT + SW.length * .045 + .25;
+  HW.forEach(({ ss }, i) => ss.forEach(sg => fill(sg, sg.c0 === sg.c1 ? 1 : easeInOut((t - HEND - (i < 3 ? 0 : .2)) / .45))));
+  SW.forEach(({ ss }) => ss.forEach(sg => fill(sg, sg.c0 === sg.c1 ? 1 : easeInOut((t - SEND) / .45))));
+  ['labL', 'labM'].forEach((id, i) => { const a = easeOut((t - LABT - i * .1) / .5); const el = document.getElementById(id); el.style.opacity = a * (1 - out); el.style.marginTop = (10 * (1 - a)) + 'px'; });
+  // 점선이 왼쪽→오른쪽으로 그려짐, 비행기는 시작점에서 출발해 제자리에 안착, 끝 점은 점선이 닿을 때 은은하게
+  // 시작 점이 먼저 생기고 → 비행기가 머리에서 점선을 그으며 모니터 쪽 끝까지 (부드러운 가감속) → 도착하면 빛 점
+  const d0 = easeOut((t - ARC + .25) / .3), dot0 = document.getElementById('dot0'), S0p = AT(0);
+  dot0.style.left = (S0p[0] - 6) + 'px'; dot0.style.top = (S0p[1] - 6) + 'px'; dot0.style.opacity = d0 * (1 - out); dot0.style.transform = 'scale(' + lerp(.2, 1, d0) + ')';
+  const io4 = q => q < .5 ? 8 * q ** 4 : 1 - Math.pow(-2 * q + 2, 4) / 2, pk = UE * io4(clamp((t - ARC) / 1.35)), p = AT(pk), da = ang(pk) - A0;
+  const lk = io4(clamp((t - ARC) / 1.6)), lp = AT(lk); // 점선 머리는 비행기보다 조금 더 가서 끝까지
+  document.getElementById('revealRect').setAttribute('width', Math.max(0, Math.max(p[0], lp[0]) - 780).toFixed(1));
+  document.getElementById('arcPath').style.opacity = (t > ARC ? 1 : 0) * (1 - out);
+  const r = da * Math.PI / 180, ox = OFF[0] * Math.cos(r) - OFF[1] * Math.sin(r), oy = OFF[0] * Math.sin(r) + OFF[1] * Math.cos(r); // 선 위 높이는 Figma 그대로, 진행 방향 따라 회전
+  const plane = document.getElementById('plane'); plane.style.opacity = clamp((t - ARC + .1) / .15) * (1 - out);
+  plane.setAttribute('transform', 'translate(' + (p[0] + ox - PC[0]) + ' ' + (p[1] + oy - PC[1]) + ') rotate(' + da + ' ' + PC[0] + ' ' + PC[1] + ')');
+  const gk = clamp((t - ARC - 1.45) / .45), glow = document.getElementById('glow');
+  glow.style.opacity = easeOut(gk) * (1 - out); glow.style.transform = 'scale(' + lerp(.3, 1, pop(gk)) + ')';
+}
+window.render = render;
+const loadImg = src => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = src; });
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), loadImg('../full/s/L12.png'), loadImg('../full/s/M_home.png')]).then(() => render(0));
+</script>
+</body></html>

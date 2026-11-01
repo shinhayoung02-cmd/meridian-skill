@@ -4,3 +4,8 @@ ext/
 *.mp4
 *.log
 still_*.png
+ref/
+seq1_kling/
+seq_17_22/
+*.webm
+*.mkv

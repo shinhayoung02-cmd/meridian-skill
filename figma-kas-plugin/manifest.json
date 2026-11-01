@@ -1,0 +1,8 @@
+{
+  "name": "KAS 폰트 일괄 변경",
+  "id": "meridian-kas-font-swap",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": ["figma"],
+  "documentAccess": "dynamic-page"
+}

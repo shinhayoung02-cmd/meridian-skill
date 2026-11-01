@@ -8,7 +8,7 @@ const path = require('path');
 (async () => {
   const [html, out, fpsArg, scaleArg] = process.argv.slice(2);
   const scale = Number(scaleArg) || 1;
-  const browser = await chromium.launch({ channel: 'msedge' });
+  const browser = await chromium.launch({ channel: 'msedge', args: ['--allow-file-access-from-files'] });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: scale });
   await page.goto('file:///' + path.resolve(html).replace(/\\/g, '/'));
   await page.evaluate(() => window.ready);
@@ -27,7 +27,7 @@ const path = require('path');
   const fps = Number(fpsArg) || 30, frames = Math.ceil((t1 - t0) * fps);
   // 어두운 그라데이션 배경: 미세 노이즈(디더)로 계단·블록 방지 + 낮은 crf. 4K는 비트레이트 하한도 둠
   const ff = spawn(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
-    '-vf', 'noise=alls=3:allf=t', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '12', '-preset', scale > 1 ? 'veryfast' : 'slow', '-tune', 'grain',
+    '-vf', 'noise=alls=3:allf=t', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', process.env.CRF || '12', '-preset', process.env.PRESET || (scale > 1 ? 'veryfast' : 'slow'), '-tune', 'grain',
     // 4K: veryfast(스레드 제한 없음) — 메모리 줄이려고 threads 6 + medium으로 했다가 0.3fps로 병목. lookahead만 줄여 메모리 억제
     ...(scale > 1 ? ['-x264-params', 'vbv-maxrate=120000:vbv-bufsize=120000:rc-lookahead=15', '-minrate', '40M', '-b:v', '0'] : []),
     '-movflags', '+faststart', out],

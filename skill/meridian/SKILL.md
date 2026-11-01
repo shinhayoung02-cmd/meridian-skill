@@ -78,3 +78,34 @@ MERIDIAN(FLIGHT RHYTHM) 작업 — UI 흐름 영상(라운지/기내 모니터/�
 ## 6. 공유 레포
 
 https://github.com/shinhayoung02-cmd/meridian-skill (Public) — 로컬 `~/projects/meridian-video`. 이 SKILL.md를 고치면 `skill/meridian/SKILL.md`에도 복사. 커밋·푸시는 사용자가 요청할 때만.
+
+## 7. KoreanAirSansKR 텍스트 수정 요령 (MCP에서 폰트 로드 불가)
+
+- **영문 단어 일부만 남길 때**(Personal Care → Care): 원본 텍스트 clone → `figma.flatten` → 남길 부분만 clip 프레임으로 잘라 배치, 원본은 `opacity 0`(자동 레이아웃 안 밀리게). 잘라낼 위치는 Lato 같은 크기로 접두어/전체 폭 비율을 재서 계산.
+- **한글/새 문구**: 같은 크기·색·굵기의 Noto Sans KR 텍스트로 같은 부모의 같은 index에 끼워 넣고 원본 삭제(복사본에서만).
+- 한글 보조 문구: Noto Sans KR Regular, 라운지 26px / 모니터 15px, `#9FBAF5`.
+- **2026-10-28 사용자 결정: 새 글자는 Noto Sans KR 텍스트로 넣고 레이어 이름 앞에 "[KAS]"** — 사용자가 Figma 앱에서 KoreanAirSansKR로 일괄 변경. 굵기는 Regular/Bold만(KAS에 두 가지뿐). 아웃라인 잘라 붙이기는 더 이상 쓰지 않음.
+
+## 8. 2026-10-28 컨펌 수정 결과 위치
+
+`전체 수정`(30:395)에서 원본 x+22000 위치에 복사본 14장(이름 끝 "— 컨펌 수정"). LOG 02~13 행 참고.
+
+## 7. 기능 설명 + SYNC 연결 영상 (2026-11-01~)
+
+두 묶음을 전체 영상 시퀀스(`full/full2.html` 순서) 안에 이어 붙이는 작업. 상세 기록은 메모리 `project_meridian_explainer_sync.md`.
+
+### SYNC 연결 설명 (완료)
+- Figma 페이지 `SYNC 연결 설명 (편집용)` Section 1 `307:1791` — 01 `302:1441` ~ 07 `308:9315` (사용자 수정본이 기준)
+- 생성: `node sync/gen_sync.js` → `sync/sync0N.html` → `node full/par.js sync/sync0N.html output/SYNC/MERIDIAN_SYNC0N_1080p.mp4 4 4` (각 4초)
+- 모션: 왼쪽 화면 전체→카드 축소 · 오른쪽 카드 팝업 · 단어별 0.35→톡(블러 없음) · 강조어 회색→색 차오름 · 비행기가 점선을 그으며 Figma 위치(빛 점 앞)에서 멈춤 · 끝에 오른쪽 카드 전체화면
+
+### 기능 설명 (진행 중)
+- Figma 페이지 `기능 설명 · 핵심 3 (새 스타일 · 편집용)` `338:2` → Section 1 `339:3443` = 영상 순서 15줄. 기준 프레임 `344:104`
+- 레이아웃(344:104): 왼쪽 1344(같은 화면 확대 배경 + `#DEE8FD` 70%) 위 화면 카드 1240폭 r36 / 오른쪽 남색 x1397.9: 제목 37.8 → 설명 18 → 요소(≤467폭) → 이름 태그(`#9FBAF5` r65) → 기능 설명 18. 승무원 요소는 흰 판 뒤
+- 영상: `feat/row01.html`(01줄 시험, Docswave 레퍼런스 youtu.be/Ppazlu3660o 모션: 전체→카드, 단어 써지듯, 터치 자국, 태그 톡, 설명 이어 쓰기)
+- 보류: 기능 메뉴·챕터 카드, 기능 3개로 줄이기. 응급(14·15줄)은 영상 위치 미정
+
+### Figma export 주의
+- 섹션 안 노드를 PNG로 받으면 상위 배경이 깔림 → **SVG로 받고** `#F5F5F5` rect · 좌표가 큰(|v|≥3000) 경로 · 1920x1080 rect만 제거
+- 글자가 KoreanAirSansKR로 바뀐 뒤엔 MCP에서 크기 변경 불가 → Noto로 새로 만들고 이름 `[KAS]` 유지 → 사용자가 KAS 플러그인 실행
+- 화면·기능·문구 선택은 내가 정하지 말고 후보를 먼저 보여 확인받기

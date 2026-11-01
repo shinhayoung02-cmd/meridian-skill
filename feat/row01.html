@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- 기능 설명 01줄 · 라운지 식이 선호 → 첫 번째 식사 (Figma Section 2 339:5293 · 354:214/512/620 수치 그대로)
+     모션 레퍼런스 youtu.be/Ppazlu3660o (Docswave): 단어별 써지듯 등장 · 터치 점 · 태그 톡 · 설명 이어 쓰기 -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(#10236E, #050B2E); font-family: KAS; letter-spacing: -0.02em; }
+  .abs { position: absolute; left: 0; top: 0; }
+  #left { overflow: hidden; height: 1080px; background: #000; }
+  #left img { position: absolute; top: 0; left: -288px; width: 1920px; height: 1080px; }
+  #left .ov { position: absolute; inset: 0; background: rgba(222,232,253,.7); }
+  #card { transform-origin: 0 0; overflow: hidden; border-radius: 36px; width: 1240px; height: 697.5px; }
+  #card img { position: absolute; left: 0; top: 0; width: 1240px; height: 697.5px; }
+  .w { display: inline-block; white-space: pre; }
+  #title { left: 1397.9px; top: 352.2px; font-weight: 700; font-size: 37.8px; line-height: 45px; color: #F1F5FF; white-space: nowrap; }
+  #sub { left: 1397.9px; top: 406.5px; width: 436.5px; font-size: 18px; line-height: 27px; color: #AFC0EE; word-break: keep-all; }
+  .el { position: absolute; opacity: 0; transform-origin: 0 50%; }
+  .tag { position: absolute; height: 45.9px; border-radius: 64.8px; background: #9FBAF5; transform-origin: 0 50%; opacity: 0; overflow: hidden; white-space: nowrap; }
+  .tag > span { position: absolute; left: 27.9px; top: 9.9px; font-weight: 700; font-size: 21.6px; line-height: 26px; color: #F1F5FF; }
+  .desc { position: absolute; font-size: 18px; line-height: 27px; color: #AFC0EE; white-space: nowrap; }
+  .tap { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(255,255,255,.55); box-shadow: 0 0 0 1px rgba(255,255,255,.35); opacity: 0; pointer-events: none; }
+  .ring { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); opacity: 0; pointer-events: none; }
+</style></head>
+<body>
+<div id="stage">
+  <div id="left" class="abs"><img id="bgA" src="a/scrA.png"><img id="bgB" src="a/scrB.png" style="opacity:0"><div class="ov" id="ov"></div></div>
+  <div id="card" class="abs"><img id="cA" src="a/scrA.png"><img id="cB" src="a/scrB.png" style="opacity:0"></div>
+  <div id="tapLayer" class="abs"><div class="ring" id="ring"></div><div class="tap" id="tap"></div></div>
+  <div id="title" class="abs"></div><div id="sub" class="abs"></div>
+  <div id="feats"></div>
+</div>
+<script>
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const easeIn = p => { p = clamp(p); return p * p * p; };
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const pop = k => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+
+// ── Figma 값 (354:214 / 354:512 / 354:620)
+const CARD = { x: 52, y: 191.3, w: 1240, h: 697.5 }, CS = 1240 / 2048; // 화면 2048 → 카드 1240
+const FEATS = [
+  { el: 'a/el1.svg', box: [1389, 509, 510.4, 137.7], tag: [1397.9, 694.8, 236.9], name: '알레르기 · 식이 선택', desc: [1406.9, 749.7, '갑각류 · 견과류 · 유제품 등 피해야 할 것을 고릅니다.'], scr: 'A',
+    taps: [[476 + 174, 366 + 119], [848 + 174, 366 + 119]] },                 // Nut-free · Dairy-free (원본 49:5399 · 49:5402 중심)
+  { el: 'a/el2.svg', box: [1397.9, 511.2, 463.6, 207], tag: [1397.9, 774.6, 204.9], name: '첫 번째 식사 메뉴', desc: [1406.9, 829.5, '선호에 맞는 메뉴 중에서 첫 식사를 고릅니다.'], scr: 'B',
+    taps: [[104 + 294, 300 + 271]] },                                          // Beef Bulgogi (39:494)
+  { el: 'a/el3.svg', box: [1397.9, 511.2, 224.6, 207], tag: [1397.9, 774.6, 243.9], name: '맞지 않는 메뉴 비활성', desc: [1406.9, 829.5, '고른 선호와 맞지 않는 메뉴는 표시만 되고 고를 수 없습니다.'], scr: 'B',
+    taps: [[1356 + 294, 300 + 271]], noPress: true },                          // Cream Pasta (39:508) — 눌러도 안 됨
+];
+// ── 타이밍
+const SHRINK = .5, TITLE = 1.25, F0 = 2.0, FD = 3.3, OUT = F0 + FD * 3 + .1;
+window.DURATION = OUT + 1.3;
+
+// 글자를 단어 단위로
+const words = (el, txt) => txt.split(/( )/).filter(Boolean).map(p => { if (p === ' ') { el.appendChild(document.createTextNode(' ')); return null; } const s = document.createElement('span'); s.className = 'w'; s.textContent = p; el.appendChild(s); return s; }).filter(Boolean);
+const TW = words(document.getElementById('title'), '식이 선호 · 첫 번째 식사');
+const SW = words(document.getElementById('sub'), '알레르기와 식이 선호를 먼저 고르면, 맞지 않는 메뉴는 고를 수 없게 됩니다.');
+const feats = document.getElementById('feats');
+const FE = FEATS.map(f => {
+  const im = document.createElement('img'); im.className = 'el'; im.src = f.el; Object.assign(im.style, { left: f.box[0] + 'px', top: f.box[1] + 'px', width: f.box[2] + 'px', height: f.box[3] + 'px' }); feats.appendChild(im);
+  const tg = document.createElement('div'); tg.className = 'tag'; Object.assign(tg.style, { left: f.tag[0] + 'px', top: f.tag[1] + 'px', width: f.tag[2] + 'px' }); tg.innerHTML = `<span>${f.name}</span>`; feats.appendChild(tg);
+  const ds = document.createElement('div'); ds.className = 'desc'; Object.assign(ds.style, { left: f.desc[0] + 'px', top: f.desc[1] + 'px' }); feats.appendChild(ds);
+  return { im, tg, tw: [...f.name], tspan: tg.firstChild, dw: words(ds, f.desc[2]) }; });
+FE.forEach(e => { e.tspan.textContent = ''; e.chars = [...FEATS[FE.indexOf(e)].name].map(c => { const s = document.createElement('span'); s.textContent = c; s.style.opacity = 0; e.tspan.appendChild(s); return s; }); });
+
+// 단어 써지듯: 왼쪽부터 하나씩, 살짝 올라오며
+const typeWords = (list, t0, step, t, out = 0) => list.forEach((w, i) => { const k = easeOut((t - t0 - i * step) / .28); w.style.opacity = k * (1 - out); w.style.transform = `translateY(${(1 - k) * 10}px)`; });
+
+function render(t) {
+  // 전체 화면 → 왼쪽 카드 (밝은 덮개 영역이 1920 → 1344로 걷히며 오른쪽 남색이 열림)
+  const k = chewy((t - SHRINK) / 1.0), ko = chewy((t - OUT) / 1.0);
+  const kk = k * (1 - ko);
+  const left = document.getElementById('left'); left.style.width = lerp(1920, 1344, kk) + 'px';
+  document.getElementById('ov').style.opacity = kk; [...left.querySelectorAll('img')].forEach(i => i.style.left = (lerp(1920, 1344, kk) / 2 - 960) + 'px');
+  const sFull = 1920 / 1240; const card = document.getElementById('card');
+  const cs = lerp(sFull, 1, kk), cx = lerp(0, CARD.x, kk), cy = lerp((1080 - CARD.h * sFull) / 2, CARD.y, kk);
+  card.style.transform = `translate(${cx}px, ${cy}px) scale(${cs})`; card.style.borderRadius = (36 / cs * kk) + 'px';
+  card.style.boxShadow = `0 ${36 / cs}px ${88 / cs}px rgba(0,0,0,${.2 * kk}), 0 ${14.4 / cs}px ${28.8 / cs}px rgba(0,0,0,${.4 * kk})`;
+  // 화면 전환(식이 선호 → 첫 식사): 같은 기기라 제자리 크로스페이드
+  const toB = easeInOut((t - (F0 + FD - .35)) / .4);
+  ['cB', 'bgB'].forEach(id => document.getElementById(id).style.opacity = toB);
+  // 제목·설명
+  const textOut = easeIn((t - OUT) / .35);
+  typeWords(TW, TITLE, .07, t, textOut); typeWords(SW, TITLE + .35, .035, t, textOut);
+  // 기능 1~3
+  const tap = document.getElementById('tap'), ring = document.getElementById('ring'); let tapShown = false;
+  FEATS.forEach((f, i) => { const e = FE[i], T0 = F0 + i * FD, T1 = T0 + FD;
+    // 터치: 카드 위 원본 좌표 → 화면 좌표
+    f.taps.forEach(([px, py], j) => { const tt = T0 + .15 + j * .45, u = t - tt; if (u < -0.25 || u > .7) return; tapShown = true;
+      const x = CARD.x + px * CS, y = CARD.y + py * CS; const a = clamp((u + .25) / .2) * (1 - clamp((u - .45) / .25));
+      const press = f.noPress ? 0 : (u > 0 && u < .12 ? easeInOut(u / .12) : u >= .12 && u < .35 ? 1 - easeInOut((u - .12) / .23) : 0);
+      Object.assign(tap.style, { left: x + 'px', top: y + 'px', opacity: a, transform: `scale(${1 - .18 * press})` });
+      const rk = clamp((u - .1) / .5); Object.assign(ring.style, { left: (x - 23 - 30 * rk) + 'px', top: (y - 23 - 30 * rk) + 'px', width: (46 + 60 * rk) + 'px', height: (46 + 60 * rk) + 'px', opacity: f.noPress ? 0 : (u > .1 ? .6 * (1 - rk) : 0) }); });
+    const out = i < 2 ? easeIn((t - (T1 - .3)) / .25) : textOut;
+    // 요소: 아래에서 떠오르며 (터치 직후)
+    const ek = easeOut((t - (T0 + .55)) / .45); e.im.style.opacity = ek * (1 - out); e.im.style.transform = `translateY(${(1 - ek) * 18 - out * 10}px) scale(${lerp(.96, 1, ek)})`;
+    // 태그: 왼쪽부터 톡 펼쳐지고 글자 타이핑
+    const gk = clamp((t - (T0 + .95)) / .35); e.tg.style.opacity = (gk > 0 ? 1 : 0) * (1 - out); e.tg.style.transform = `scaleX(${lerp(.15, 1, pop(gk))})`;
+    e.chars.forEach((c, j) => c.style.opacity = clamp((t - (T0 + 1.1) - j * .035) / .08));
+    // 설명: 단어별 이어 쓰기
+    typeWords(e.dw, T0 + 1.45, .06, t, out); });
+  if (!tapShown) { tap.style.opacity = 0; ring.style.opacity = 0; }
+}
+window.render = render;
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => render(0));
+</script>
+</body></html>

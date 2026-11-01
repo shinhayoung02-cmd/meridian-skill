@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- SYNC 01 예시: 라운지 Plan Ready(54:1251) → 기내 모니터 My Journey(69:1332)
+     캡슐 대신 실제 UI 조각(식사·수면·기상 항목, 노드별 개별 export a/*.png)이 들려서 모니터 타임라인 아이콘 자리로 날아감 -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #02061F; }
+  .abs { position: absolute; left: 0; top: 0; }
+  #lounge { width: 1920px; height: 1080px; }
+  #monitor { width: 1920px; height: 1082px; }
+  #btn { overflow: hidden; transform-origin: 50% 50%; }
+  .piece { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  .piece img { position: absolute; display: block; }
+  .glow { position: absolute; border-radius: 50%; pointer-events: none; background: radial-gradient(circle, rgba(200,225,255,.55) 0%, rgba(160,200,255,.18) 45%, rgba(160,200,255,0) 70%); }
+  #tag { position: absolute; left: 0; top: 0; font-family: KAS; font-size: 22px; color: #EAF1FF; letter-spacing: -0.02em; padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.18); white-space: nowrap; }
+  canvas { position: absolute; left: 0; top: 0; }
+</style></head>
+<body>
+<img id="monitor" class="abs" src="../full/s/M_home.png">
+<div id="loungeWrap" class="abs" style="width:1920px;height:1080px">
+  <div id="lounge" class="abs"></div>
+  <div id="btn" class="abs"></div>
+  <div id="patches"></div>
+</div>
+<canvas id="cv" width="1920" height="1080"></canvas>
+<div id="glows"></div>
+<svg width="0" height="0" style="position:absolute"><defs id="defs"></defs></svg>
+<div id="pieces"></div>
+<div id="tag">12A · Flight Plan</div>
+<script>
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+window.DURATION = 4.8;
+
+// 좌표 변환: 라운지 프레임(2048, 실제 화면 7,3부터 2032폭 — 가장자리 흰 줄은 밖으로) / 모니터 프레임(1015)
+const KL = 1920 / 2032, Lx = x => (x - 7) * KL, Ly = y => (y - 3) * KL;
+const KM = 1920 / 1015, Mx = x => x * KM, My = y => y * KM - 1;
+
+// Done 버튼(54:1307) — 화면 자체의 버튼 영역이 제자리에서 눌림
+const BTN = [1563.5, 1006, 276, 89];
+const btn = document.getElementById('btn');
+// 라운지 화면: 2048 프레임을 KL배, 실제 화면(7,3)이 스테이지 원점에 오게
+Object.assign(document.getElementById('lounge').style, { background: `url(../full/s/L12.png) ${-7 * KL}px ${-3 * KL}px / ${2048 * KL}px ${1152 * KL}px no-repeat` });
+Object.assign(btn.style, { left: Lx(BTN[0]) + 'px', top: Ly(BTN[1]) + 'px', width: BTN[2] * KL + 'px', height: BTN[3] * KL + 'px',
+  background: `url(../full/s/L12.png) ${-BTN[0] * KL}px ${-BTN[1] * KL}px / ${2048 * KL}px ${1152 * KL}px no-repeat`, borderRadius: 44 * KL + 'px' });
+
+// 조각: [접두, 원 위치(Figma render bounds), 아이콘, 글자 3줄, 도착 아이콘(모니터 노드 박스)]
+const P = [
+  ['m', [326.7, 410], [362.7, 446], [[374.5, 609.9, 72.9, 25.4], [278.9, 661.3, 266, 43.1], [289.4, 726.5, 244, 22.7]], [245.8, 260.5, 58.8]],  // Meal → First Meal
+  ['s', [940, 410], [976, 446], [[981.6, 609.9, 85.2, 31.7], [878, 663.4, 292, 32.5], [957, 726.5, 135.4, 22.7]], [363.9, 260.5, 58.8]],        // Sleep → Rest
+  ['w', [1553.3, 410], [1589.3, 446], [[1564.7, 609.9, 144.4, 31.7], [1483.4, 662.8, 308.4, 41], [1495.3, 726.8, 285.4, 22.4]], [717.9, 260.5, 58.8]], // Wake-up → Alarm
+];
+const piecesEl = document.getElementById('pieces'), defs = document.getElementById('defs'), glows = document.getElementById('glows');
+const PC = P.map(([k, circ, icon, texts, dst], i) => {
+  // 조각 원점 = 원 중심 (조각 안 좌표는 Figma 1x 그대로, 그룹 전체를 KL배)
+  const cx = circ[0] + 84, cy = circ[1] + 84;
+  const el = document.createElement('div'); el.className = 'piece';
+  const add = (src, x, y, w, h) => { const im = document.createElement('img'); im.src = `a/${k}_${src}.svg`; Object.assign(im.style, { left: (x - cx) + 'px', top: (y - cy) + 'px', width: w + 'px', height: h + 'px' }); el.appendChild(im); return im; };
+  const c = add('circ', circ[0], circ[1], 168, 168), ic = add('icon', icon[0], icon[1], 96, 96);
+  const t = texts.map((r, j) => add('t' + (j + 1), ...r));
+  defs.insertAdjacentHTML('beforeend', `<filter id="mb${i}" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="0 0"/></filter>`);
+  piecesEl.appendChild(el);
+  const pa = document.createElement('div'); pa.className = 'abs'; const X0 = Math.min(circ[0], ...texts.map(r => r[0])) - 14, X1 = Math.max(circ[0] + 168, ...texts.map(r => r[0] + r[2])) + 14, Y0 = 400, Y1 = 760;
+  Object.assign(pa.style, { left: Lx(X0) + 'px', top: Ly(Y0) + 'px', width: (X1 - X0) * KL + 'px', height: (Y1 - Y0) * KL + 'px', opacity: 0,
+    background: `url(../full/s/L12.png) ${-X0 * KL}px ${-775 * KL * (Y1 - Y0) / 60}px / ${2048 * KL}px ${1152 * KL * (Y1 - Y0) / 60}px no-repeat` });
+  document.getElementById('patches').appendChild(pa);
+  const g = document.createElement('div'); g.className = 'glow'; glows.appendChild(g);
+  const sx = Lx(cx), sy = Ly(cy), dx = Mx(dst[0] + dst[2] / 2), dy = My(dst[1] + dst[2] / 2), ds = dst[2] * KM / (168 * KL); // 원 크기를 도착 아이콘 크기로
+  return { pa, el, c, ic, t, blur: defs.lastElementChild.firstElementChild, glow: g, sx, sy, dx, dy, ds, dsz: dst[2] * KM };
+});
+
+// ── 타이밍
+const TAP = .75, REL = TAP + .19;            // 버튼 눌림 → 떼는 순간 정보가 들림
+const LIFT = REL, LIFT_D = .45;              // 제자리에서 떠오름 + 작아짐 + 보조 글자 사라짐
+const FLY = REL + .38, FLY_D = 1.15, ST = .09; // 비행(쫀득) — 항목마다 살짝 늦게
+const WIPE = REL + .3, WIPE_D = .95;          // 기기 전환 물결 와이프 (위→아래)
+const tapK = u => { const d = u - TAP; if (d < 0 || d > .49) return 0; if (d < .13) return easeInOut(d / .13); if (d < .19) return 1; return 1 - easeInOut((d - .19) / .3); };
+
+const cv = document.getElementById('cv'), g = cv.getContext('2d'), ORG = '248,70,19';
+const wipeClipV = e => `path('M -10 -10 L 1930 -10 L 1930 ${e - 70} C 1300 ${e + 60}, 640 ${e - 100}, -10 ${e + 50} Z')`;
+function wipeEdgeV(e, a) { g.save(); g.shadowColor = `rgba(2,6,31,${.45 * a})`; g.shadowBlur = 40; g.shadowOffsetY = 10; g.strokeStyle = `rgba(${ORG},${.5 * a})`; g.lineWidth = 2; g.beginPath(); g.moveTo(1930, e - 70); g.bezierCurveTo(1300, e + 60, 640, e - 100, -10, e + 50); g.stroke(); g.restore(); }
+
+function pose(p, i, t) {
+  const lk = easeOut((t - LIFT - i * .04) / LIFT_D);
+  const fk = chewy((t - FLY - i * ST) / FLY_D);
+  // 떠오른 자리(살짝 위, 0.82배) → 도착 아이콘 자리 (위로 볼록한 경로)
+  const ux = p.sx, uy = p.sy - 26 * lk, us = KL * lerp(1, .82, lk);
+  const mx = (ux + p.dx) / 2, my = Math.min(uy, p.dy) - 160;
+  const x = (1 - fk) ** 2 * ux + 2 * (1 - fk) * fk * mx + fk * fk * p.dx;
+  const y = (1 - fk) ** 2 * uy + 2 * (1 - fk) * fk * my + fk * fk * p.dy;
+  return { x, y, s: lerp(us, p.ds * KL, fk), lk, fk };
+}
+
+function render(t) {
+  // 버튼: 11% 눌림, 뗄 때 원래대로
+  btn.style.transform = `scale(${1 - .11 * tapK(t)})`;
+  // 와이프: 모니터가 위에서부터 물결 경계로 덮음 (라운지 레이어를 아래쪽만 남김)
+  g.clearRect(0, 0, 1920, 1080);
+  const wk = (t - WIPE) / WIPE_D, lw = document.getElementById('loungeWrap');
+  if (wk <= 0) lw.style.clipPath = 'none', lw.style.display = 'block';
+  else if (wk >= 1) lw.style.display = 'none';
+  else { const e = lerp(-260, 1340, chewy(wk)); lw.style.display = 'block'; lw.style.clipPath = `path('M -10 ${e + 50} C 640 ${e - 100}, 1300 ${e + 60}, 1930 ${e - 70} L 1930 1090 L -10 1090 Z')`; wipeEdgeV(e, Math.sin(Math.PI * wk)); }
+  // 조각
+  PC.forEach((p, i) => {
+    const a = pose(p, i, t), b = pose(p, i, t - 1 / 60);
+    const live = t >= LIFT;
+    p.el.style.display = live ? 'block' : 'none';
+    p.pa.style.opacity = clamp((t - LIFT - i * .04) / .05);
+    const land = easeInOut((t - (FLY + i * ST + FLY_D * .62)) / .35); // 도착하며 실제 모니터 아이콘으로 넘어감
+    if (live) {
+      p.el.style.transform = `translate(${a.x}px, ${a.y}px) scale(${a.s})`;
+      p.el.style.opacity = 1 - land;
+      // 보조 글자(Meal · First Meal 00:50 등)는 들릴 때 사라지고, 큰 글자는 비행 중반까지
+      p.t[0].style.opacity = p.t[2].style.opacity = 1 - easeOut(a.lk * 1.3);
+      p.t[1].style.opacity = 1 - easeInOut((a.fk - .12) / .3);
+      // 진행 방향 모션블러 + 떠 있는 동안 옅은 그림자
+      const vx = Math.abs(a.x - b.x), vy = Math.abs(a.y - b.y);
+      p.blur.setAttribute('stdDeviation', `${Math.min(vx * .3, 40).toFixed(2)} ${Math.min(vy * .3, 40).toFixed(2)}`);
+      const sh = `drop-shadow(0 ${(18 * a.lk).toFixed(1)}px ${(30 * a.lk).toFixed(1)}px rgba(0,0,20,${(.5 * a.lk * (1 - a.fk * .6)).toFixed(3)}))`;
+      p.el.style.filter = (vx + vy > 6 ? `url(#mb${i}) ` : '') + sh;
+    }
+    // 착지: 도착 아이콘이 제자리에서 은은하게 밝아졌다 가라앉음
+    const gk = clamp((t - (FLY + i * ST + FLY_D * .6)) / 1.1), ga = Math.sin(Math.PI * gk) * .9, gs = p.dsz * 2.6;
+    Object.assign(p.glow.style, { left: (p.dx - gs / 2) + 'px', top: (p.dy - gs / 2) + 'px', width: gs + 'px', height: gs + 'px', opacity: ga });
+  });
+  // 좌석 라벨: 첫 조각 위에 작게 따라붙음
+  const tag = document.getElementById('tag'), a0 = pose(PC[0], 0, t), tw = tag.offsetWidth;
+  const tagA = easeOut((t - LIFT - .15) / .3) * (1 - easeInOut((t - (FLY + FLY_D * .55)) / .3));
+  tag.style.opacity = t >= LIFT ? tagA : 0;
+  tag.style.transform = `translate(${a0.x - tw / 2}px, ${a0.y - 168 * a0.s / 2 - 54}px)`;
+}
+window.render = render;
+window.ready = Promise.all([document.fonts.load('400 20px KAS'), ...[...document.images].map(im => im.decode().catch(() => {})),
+  new Promise(r => { const im = new Image(); im.onload = r; im.src = '../full/s/L12.png'; })]).then(() => render(0));
+</script>
+</body></html>

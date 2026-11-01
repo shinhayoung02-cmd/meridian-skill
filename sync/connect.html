@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- SYNC 01 연결 설명: 레퍼런스 youtu.be/CQmhd3oMTUM (10~14초) — 위 아이콘 + 큰 제목, 아래 화면 카드 나란히, 아이콘에서 점선이 화면 속 같은 정보로
+     라운지 Plan Ready(54:1251) ↔ 좌석 모니터 My Journey(69:1332) -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; font-family: KAS; letter-spacing: -0.02em;
+    background: radial-gradient(ellipse 70% 55% at 50% -8%, #FFFFFF 0%, #FFFFFF 55%, rgba(255,255,255,0) 56%), linear-gradient(#F3F5F9, #E9EDF4); }
+  .card { position: absolute; left: 0; top: 0; transform-origin: 0 0; border-radius: 0; overflow: hidden; will-change: transform; }
+  .card div { width: 100%; height: 100%; background-repeat: no-repeat; }
+  #lines { position: absolute; left: 0; top: 0; }
+  .ico { position: absolute; width: 168px; height: 168px; transform-origin: 50% 50%; }
+  .ico img { position: absolute; display: block; }
+  #head { position: absolute; left: 0; width: 1920px; top: 170px; text-align: center; font-weight: 700; font-size: 74px; white-space: nowrap; }
+  .ch { display: inline-block; white-space: pre; }
+  #sub { position: absolute; left: 0; width: 1920px; top: 290px; text-align: center; font-size: 30px; color: #5F6A85; white-space: nowrap; }
+  .lab { position: absolute; top: 0; font-size: 26px; color: #6B7387; white-space: nowrap; transform: translateX(-50%); }
+  .lab b { color: #06176A; font-weight: 700; }
+</style></head>
+<body>
+<div id="stage">
+  <canvas id="lines" width="1920" height="1080"></canvas>
+  <div id="cardM" class="card"><div id="imgM"></div></div>
+  <div id="cardL" class="card"><div id="imgL"></div></div>
+  <canvas id="lines2" width="1920" height="1080" style="position:absolute;left:0;top:0"></canvas>
+  <div id="icons"></div>
+  <div id="head"></div>
+  <div id="sub"></div>
+  <div id="labL" class="lab"><b>라운지 패드</b> · Plan Ready</div>
+  <div id="labM" class="lab"><b>좌석 모니터</b> · My Journey</div>
+</div>
+<script>
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeIn = p => { p = clamp(p); return p * p * p; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const popIn = p => { p = clamp(p); const c = .9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+window.DURATION = 8.2;
+
+// ── 화면 카드: 라운지(2048 프레임, 실제 화면 7,3부터 2032x1146) / 모니터(1015x572, 2x PNG 2030x1144)
+const CW = 760, GAP = 64, CY = 486, LX = (1920 - CW * 2 - GAP) / 2, MX = LX + CW + GAP;
+const L = { w: 2032, h: 1146 }, M = { w: 1015, h: 572 };
+const cardL = document.getElementById('cardL'), cardM = document.getElementById('cardM');
+Object.assign(cardL.style, { width: L.w + 'px', height: L.h + 'px' }); Object.assign(cardM.style, { width: M.w + 'px', height: M.h + 'px' });
+Object.assign(document.getElementById('imgL').style, { background: `url(../full/s/L12.png) -7px -3px / 2048px 1152px no-repeat` });
+Object.assign(document.getElementById('imgM').style, { background: `url(../full/s/M_home.png) 0 0 / 1015px 572px no-repeat` });
+const sL = CW / L.w, sM = CW / M.w, fullL = 1920 / L.w, fullM = 1920 / M.w;
+
+// ── 연결할 정보 3개: [아이콘 접두, 라운지 항목 원 중심(프레임 좌표), 모니터 타임라인 아이콘 중심(프레임 좌표)]
+const LINKS = [['m', [410.7, 494], [275.2, 289.9]], ['s', [1024, 494], [393.8, 289.9]], ['w', [1637.3, 494], [747.8, 289.9]]];
+const ICY = 150, ICX = [960 - 120, 960, 960 + 120], ICS = 72 / 168;
+const icons = [].map(([k], i) => {
+  const d = document.createElement('div'); d.className = 'ico';
+  d.innerHTML = `<img src="a/${k}_circ.svg" style="left:0;top:0;width:168px;height:168px"><img src="a/${k}_icon.svg" style="left:36px;top:36px;width:96px;height:96px">`;
+  document.getElementById('icons').appendChild(d); return d; });
+
+// ── 제목: 앞부분 진하게, 뒷부분 회색 (레퍼런스처럼)
+const HEAD = [['식사 · 수면 · 기상 계획', '#06176A'], [' → 좌석 모니터', '#A3ABBD']];
+const head = document.getElementById('head'), HC = [];
+const SUBT = '라운지 패드에서 확정한 계획이 좌석 모니터 타임라인에 그대로 표시됩니다.', SBC = [...SUBT].map(c => { const sp = document.createElement('span'); sp.className = 'ch'; sp.textContent = c; document.getElementById('sub').appendChild(sp); return sp; });
+HEAD.forEach(([s, col]) => [...s].forEach(c => { const sp = document.createElement('span'); sp.className = 'ch'; sp.textContent = c; sp.style.color = col; head.appendChild(sp); HC.push(sp); }));
+
+// ── 타이밍
+const SHRINK = .6, MPOP = 1.25, HEADT = 1.7, ICT = 2.5, LINE = 3.0, OUT = 6.3;
+
+// 카드 포즈
+function cardLPose(t) {
+  const k = chewy((t - SHRINK) / 1.15);
+  const out = easeInOut((t - OUT) / .5);
+  return { x: lerp(0, LX, k), y: lerp(0, CY, k), s: lerp(fullL, sL, k), o: 1 - out, sh: k * (1 - out) };
+}
+function cardMPose(t) {
+  if (t < OUT) { const u = t - MPOP, k = popIn(u / .8), f = lerp(.9, 1, k); return { x: MX + CW * (1 - f) / 2, y: CY + M.h * sM * (1 - f) / 2 + 30 * (1 - chewy(u / .8)), s: sM * f, o: clamp(u / .2), sh: 1 }; }
+  const k = chewy((t - OUT - .15) / 1.2); // 다음 장면으로: 모니터 카드가 전체 화면으로
+  return { x: lerp(MX, 0, k), y: lerp(CY, -1, k), s: lerp(sM, fullM, k), o: 1, sh: 1 - k };
+}
+const place = (el, p) => { el.style.transform = `translate(${p.x}px, ${p.y}px) scale(${p.s})`; el.style.opacity = p.o;
+  el.style.borderRadius = (14 / p.s * p.sh) + 'px'; el.style.boxShadow = `0 ${24 / p.s}px ${60 / p.s}px rgba(10,30,90,${(.28 * p.sh).toFixed(3)})`; };
+
+const lc = document.getElementById('lines').getContext('2d'), lc2 = document.getElementById('lines2').getContext('2d');
+// 점선: 아이콘 아래 → 화면 속 정보 자리. 그려지면서 진행, 끝에 점 + 한 번 퍼지는 링
+function dashed(g, x0, y0, x1, y1, k, a) {
+  if (k <= 0 || a <= 0) return;
+  const cx = x0, cy = (y0 + y1) / 2; // 아래로 내려가다 휘어 들어가는 2차 곡선
+  const P = u => [(1 - u) ** 2 * x0 + 2 * (1 - u) * u * cx + u * u * x1, (1 - u) ** 2 * y0 + 2 * (1 - u) * u * cy + u * u * y1];
+  g.save(); g.globalAlpha = a; g.strokeStyle = 'rgba(6,23,106,.42)'; g.lineWidth = 2; g.setLineDash([9, 7]); g.beginPath(); g.moveTo(x0, y0);
+  const N = 60; for (let i = 1; i <= N * k; i++) { const [x, y] = P(i / N); g.lineTo(x, y); } const [ex, ey] = P(k); g.lineTo(ex, ey); g.stroke(); g.setLineDash([]);
+  g.fillStyle = '#3E6BEB'; g.beginPath(); g.arc(ex, ey, 5, 0, 7); g.fill(); g.restore();
+}
+function ring(g, x, y, k, a) { if (k <= 0 || k >= 1) return; g.save(); g.globalAlpha = a * (1 - k); g.strokeStyle = '#3E6BEB'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 10 + 46 * easeOut(k), 0, 7); g.stroke(); g.restore(); }
+
+function render(t) {
+  const pl = cardLPose(t), pm = cardMPose(t);
+  place(cardL, pl); place(cardM, pm);
+  // 라벨
+  const labA = easeOut((t - MPOP - .4) / .5) * (1 - easeInOut((t - OUT) / .35));
+  const labL = document.getElementById('labL'), labM = document.getElementById('labM');
+  labL.style.left = (LX + CW / 2) + 'px'; labM.style.left = (MX + CW / 2) + 'px';
+  [labL, labM].forEach(l => { l.style.top = (CY + M.h * sM + 26) + 'px'; l.style.opacity = labA; });
+  // 제목
+  const hOut = 1 - easeInOut((t - OUT) / .4);
+  HC.forEach((c, i) => { const a = easeOut((t - HEADT - i * .035) / .45); c.style.opacity = a * hOut; c.style.filter = `blur(${(1 - a) * 8}px)`; c.style.transform = `translateY(${(1 - a) * 16}px)`; });
+  SBC.forEach((c, i) => { const a = easeOut((t - HEADT - .5 - i * .012) / .4); c.style.opacity = a * hOut; c.style.filter = `blur(${(1 - a) * 6}px)`; });
+  // 아이콘 (제자리 팝업)
+  icons.forEach((d, i) => { const u = t - ICT - i * .08, k = popIn(u / .6);
+    d.style.left = (ICX[i] - 84) + 'px'; d.style.top = (ICY - 84) + 'px'; d.style.opacity = clamp(u / .15) * hOut; d.style.transform = `scale(${ICS * lerp(.6, 1, k)})`; });
+  // 점선: 아이콘마다 두 화면으로 동시에 (카드가 커지는 동안엔 사라짐)
+  lc.clearRect(0, 0, 1920, 1080); lc2.clearRect(0, 0, 1920, 1080);
+  [].forEach(([, lp, mp], i) => {
+    const k = easeInOut((t - LINE - i * .22) / .9), a = hOut;
+    const x0 = ICX[i], y0 = ICY + 36 + 8;
+    const tl = [pl.x + (lp[0] - 7) * pl.s, pl.y + (lp[1] - 3) * pl.s], tm = [pm.x + mp[0] * pm.s, pm.y + mp[1] * pm.s];
+    // 제목 위를 지나가는 선은 제목 뒤로(첫 캔버스), 화면 위 끝 점은 카드 위(둘째 캔버스)
+    dashed(lc, x0, y0, tl[0], tl[1], k, a * .9); dashed(lc, x0, y0, tm[0], tm[1], k, a * .9);
+    const rk = (t - LINE - i * .22 - .9) / .7;
+    if (k >= 1) { [tl, tm].forEach(([x, y]) => { lc2.save(); lc2.globalAlpha = a; lc2.fillStyle = '#3E6BEB'; lc2.beginPath(); lc2.arc(x, y, 5, 0, 7); lc2.fill(); lc2.restore(); ring(lc2, x, y, rk, a); }); }
+  });
+}
+window.render = render;
+const loadImg = src => new Promise(r => { const im = new Image(); im.onload = im.onerror = r; im.src = src; });
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), loadImg('../full/s/L12.png'), loadImg('../full/s/M_home.png'),
+  ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => render(0));
+</script>
+</body></html>

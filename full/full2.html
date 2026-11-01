@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<style>
+  @font-face { font-family: KAS; src: local('KoreanAirSansKR'), local('KoreanAirSansKR Regular'), url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  .txt{position:absolute;font-family:KAS;color:#F5F7FF;white-space:nowrap;letter-spacing:-0.02em}
+  html,body{margin:0;background:#02061F;overflow:hidden}
+  #stage{position:relative;width:1920px;height:1080px;overflow:hidden;background:#02061F}
+  .scene{position:absolute;inset:0;overflow:hidden;display:none;transform:scale(1.012)} /* 화면 PNG 가장자리 흰 줄 숨김 */
+  .scene img,.clip img{position:absolute;left:0;width:1920px}
+  .clip{position:absolute;inset:0;overflow:hidden}
+  #fx{position:absolute;inset:0;z-index:50;transform:scale(1.012)}
+  #end{position:absolute;inset:0;opacity:0;z-index:60}
+  #logo{position:absolute;left:50%;top:50%;width:820px;opacity:0;z-index:61}
+</style></head>
+<body><div id="stage"><canvas id="fx" width="1920" height="1080"></canvas><div id="end"></div><div id="logo"><img src="logo_clean.svg" style="width:100%;display:block"></div></div>
+<script>
+// ── 기준: 스토리보드 144:703 (좌표는 카드 1120 기준 → ×S), 화면은 현재 Figma A안, 인터랙션은 lounge_40s/monitor/crew 방식
+const S = 1920 / 1120, ORG = [248, 70, 19];
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, d) => clamp((t - a) / d);
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const inCubic = t => t * t * t;
+// 쫀득 키(레퍼런스 튜토리얼): 짧게 가속해 확 치고 나가고 길게 서서히 멈춤
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+// 터치: 0.13초 눌림 → 0.06초 유지 → 0.3초 동안 떼어짐 (기존 영상 값). 반응은 떼는 순간부터
+const TAP_DOWN = .13, TAP_UP = .19, TAP_END = .49, SEL = .08; // 선택 전↔후 이미지가 겹쳐 보이지 않게 떼는 순간 거의 즉시 전환
+const tapK = (u, at) => { const d = u - at; if (d < 0 || d > TAP_END) return 0; if (d < TAP_DOWN) return easeInOut(d / TAP_DOWN); if (d < TAP_UP) return 1; return 1 - easeInOut((d - TAP_UP) / (TAP_END - TAP_UP)); };
+
+// ── 시퀀스 (스토리보드 시간 그대로)
+// taps: { r:[x,y,w,h,radius] 누르는 영역, sel: 떼는 순간 선택 상태로 바뀌는 영역인지, btn: 버튼(눌려 작아짐), at: 시각(장면 기준 초) }
+const N = [874, 550, 145, 49, 25], NB = [859, 550, 145, 49, 25], MN = [815, 557, 240, 53, 26];
+const shots = [];
+const add = (img, t0, t1, o = {}) => shots.push({ img, t0, t1, taps: [], ...o });
+const tp = (r, at, o = {}) => ({ r, at, ...o });
+add('L01', 0, 2.5, { base: 'B_L01', taps: [tp([143, 180, 404, 280, 16], 1.2, { sel: 1 })] });
+add('L02', 2.5, 5.5, { scan: true });
+add('L03', 5.5, 8, { base: 'B_L03', taps: [tp([80, 176, 308, 262, 16], .9, { sel: 1 }), tp(N, 1.8, { btn: 1 })] });
+add('L04', 8, 10.5, { base: 'B_L04', taps: [tp([54, 161, 326, 305, 16], .9, { sel: 1 }), tp(N, 1.8, { btn: 1 })] });
+add('L05', 10.5, 13, { taps: [tp(N, 1.8, { btn: 1 })] });
+add('L06', 13, 16, { base: 'B_L06', taps: [tp([260, 200, 190, 130, 12], .8, { sel: 1 }), tp([464, 200, 190, 130, 12], 1.6, { sel: 1 }), tp(N, 2.35, { btn: 1 })] });
+add('L07', 16, 19, { base: 'B_L07', taps: [tp([57, 164, 322, 296, 16], 1.0, { sel: 1 }), tp(N, 2.3, { btn: 1 })] });
+add('L08', 19, 22, { base: 'B_L08', sleep: [.75, 1.45], taps: [tp([913, 333, 39, 31, 8], .75, { btn: 1 }), tp([913, 333, 39, 31, 8], 1.45, { btn: 1 }), tp(N, 2.3, { btn: 1 })] });
+add('L09', 22, 24.5, { base: 'B_L09', taps: [tp([149, 210, 394, 260, 16], .9, { sel: 1 }), tp(N, 1.8, { btn: 1 })] });
+add('L10', 24.5, 27, { base: 'B_L10', taps: [tp([159, 132, 394, 168, 16], .9, { sel: 1 }), tp(N, 1.8, { btn: 1 })] });
+add('L11', 27, 30, { taps: [tp([842, 550, 177, 49, 25], 2.3, { btn: 1 })] });
+add('L12', 30, 32, { taps: [tp([855, 550, 151, 49, 25], 1.3, { btn: 1 })] });
+add('M_home', 32, 35.4, { sync: { from: 'L12', hold: .3, src: [855, 550, 151, 49], dst: [33, 277, 1053, 223], label: '12A · Flight Plan', dir: 'top' } });
+add('C_seat12a', 35.4, 37.8, { sync: { from: 'M_home', direct: true, src: [33, 277, 1053, 223], dst: [787, 306, 277, 74], label: '12A · Sleep 01:30 · Meal 06:00', dir: 'right' } });
+add('M_welcome', 40.6, 43, { taps: [tp([116, 545, 100, 40, 20], 1.6, { btn: 1 })] });
+add('M_home', 43, 46.5);
+add('M_preselect', 46.5, 49, { base: 'B_M_preselect', taps: [tp([30, 129, 251, 472, 14], 1.4, { sel: 1, rise: 21 })] });
+add('M_bulgogi', 49, 51.5, { taps: [tp([250, 548, 80, 40, 20], 1.6)] });
+add('M_dessert', 51.5, 53, { scrollIn: 118 });
+add('M_plan', 53, 55, { taps: [tp([45, 150, 166, 451, 17], 1.2)] });
+add('M_drink', 55, 56.5, { taps: [tp([82, 150, 297, 422, 17], .9)] });
+add('M_champ', 56.5, 58.5);
+add('M_ent', 58.5, 60.5, { taps: [tp([118, 181, 236, 295, 8], 1.2)] });
+add('M_her', 60.5, 62.5);
+add('M_sleeprem', 62.5, 65, { popup: [169, 135, 782, 339], taps: [tp([525, 372, 234, 53, 8], 1.6, { btn: 1 })] });
+add('M_sleep', 65, 67.5, { taps: [tp([589, 507, 348, 64, 32], 1.6, { btn: 1 })] });
+add('M_mealrem', 67.5, 70.5, { popup: [169, 135, 782, 339], taps: [tp([341, 372, 198, 53, 8], 1.8, { btn: 1 })] });
+add('C_update', 70.5, 75.1, { sync: { from: 'M_mealrem', src: [395, 240, 330, 56], dst: [787, 140, 278, 72], label: '12A · Second Meal 06:00 → 07:00', dir: 'right', scrollAfter: 1 } });
+add('M_next', 75.1, 77.1, { taps: [tp([906, 584, 144, 42, 10], 1.2, { btn: 1 })] });
+add('M_call', 77.1, 79.1, { taps: [tp([69, 221, 483, 168, 7], 1.2)] });
+add('M_symptom', 79.1, 81.6, { base: 'B_M_symptom', taps: [tp([66, 157, 312, 183, 8], .6, { sel: 1 }), tp([404, 157, 312, 183, 8], 1.2, { sel: 1 }), tp(MN, 1.9, { btn: 1 })] });
+add('M_items', 81.6, 84.1, { base: 'B_M_items', taps: [tp([66, 158, 312, 371, 8], .6, { sel: 1 }), tp([403, 158, 312, 371, 8], 1.2, { sel: 1 }), tp(MN, 1.9, { btn: 1 })] });
+add('M_medconf', 84.1, 85.6);
+add('C_water', 85.6, 90.2, { sync: { from: 'M_medconf', src: [510, 162, 101, 102], dst: [219,317,44,40], seat: 1, label: '12A · Water + Medicine', dir: 'right' } });
+add('M_pc', 90.2, 92, { taps: [tp([94, 209, 290, 322, 18], 1.1)] });
+add('M_fresh', 92, 94.5, { base: 'B_M_fresh', taps: [tp([66, 158, 312, 371, 8], .6, { sel: 1 }), tp([403, 158, 312, 371, 8], 1.2, { sel: 1 }), tp(MN, 1.9, { btn: 1 })] });
+add('M_pcconf', 94.5, 96);
+add('C_wash', 96, 100.6, { sync: { from: 'M_pcconf', src: [509, 162, 100, 102], dst: [219,317,44,40], seat: 1, label: '12A · Toothbrush + Toothpaste', dir: 'right' } });
+add('M_comfort', 100.6, 102.6, { taps: [tp([69, 391, 478, 118, 7], 1.2)] });
+add('M_approach', 102.6, 105.6, { base: 'B_M_approach', taps: [tp([182, 277, 770, 89, 18], .7, { sel: 1 }), tp([292, 483, 254, 49, 24], 1.5, { btn: 1 }), tp([824, 555, 227, 50, 25], 2.3, { btn: 1 })] });
+add('M_cconf', 105.6, 107.6);
+add('C_assist', 107.6, 112.2, { sync: { from: 'M_cconf', hold: .3, src: [510, 172, 100, 102], dst: [219,317,44,40], seat: 1, label: '12A · Approach discreetly · Silent', dir: 'right' } });
+add('C_dash', 112.2, 115.2, { scroll: 120, taps: [tp([64, 547, 217, 159, 12], 2.2)] }); // 대시보드 → '미완료 업무' 카드 → 다음 할 일
+add('C_queue', 115.2, 117.2, { taps: [tp([554, 14, 100, 44, 10], 1.6, { btn: 1 })] }); // 다음 할 일 → '좌석' 탭(객실 지도)
+add('C_map', 117.2, 119.2, { taps: [tp([791, 289, 277, 90, 12], 1.3)] });
+add('C_detail', 119.2, 123.2, { scroll: 266, taps: [tp([945, 780, 154, 46, 23], 2.9, { btn: 1 })] });
+add('C_assist', 123.2, 126.2, { taps: [tp([838, 14, 80, 44, 10], 2.2, { btn: 1 })] }); // 처리 상태 → '완료' 탭
+add('C_log', 126.2, 128.2, { scroll: 60 });
+add('M_done', 128.2, 132.8, { sync: { from: 'C_assist', src: [573, 219, 186, 65], dst: [238, 274, 642, 172], label: '12A · Completed', dir: 'left', pre: 'M_inprog', small: 1 } });
+add('M_landing', 132.8, 136.8, { taps: [tp([594, 361, 160, 53, 8], 2.6, { btn: 1 })] });
+add('M_landing', 136.8, 139.8, { overlay: true });
+add('M_landing', 139.8, 142.8, { surge: true, afterOverlay: true });
+add('END', 142.8, 148.8, { logo: true });
+const extend = (name, t0, dt) => { const i = shots.findIndex(x => x.img === name && x.t0 === t0); shots[i].t1 += dt; for (let j = i + 1; j < shots.length; j++) { shots[j].t0 += dt; shots[j].t1 += dt; } };
+extend('C_update', 70.5, 1.8);
+// 기기가 바뀌는데 SYNC가 아닌 장면(크루→모니터 복귀): 물결 와이프로 페이지 전환
+shots.forEach((x, i) => { const p = shots[i - 1]; if (p && !x.sync && !x.logo && !x.surge && p.img[0] !== x.img[0] && x.img !== 'END') x.waveFrom = p; });
+shots.forEach((x, i) => { const p = shots[i - 1]; if (!p || x.sync || x.waveFrom || x.scrollIn || x.logo || x.surge || p.img[0] !== x.img[0]) return;
+  const last = p.taps[p.taps.length - 1]; x.tr = !last ? 'fade' : 'tap'; x.zr = last && last.r;
+  if (last) last.at = (p.t1 - p.t0) - .24; /* 떼는 순간 = 화면 전환 시작 */ });
+// 딜레이 제거: 화면이 뜨면 바로 터치 → 터치 간격 짧게 → 떼자마자 다음 화면. 터치 없는 화면은 최대 1.8초
+{ let t = 0;
+  shots.forEach((x, i) => {
+    let d = x.t1 - x.t0; const nx = shots[i + 1];
+    if (!(x.logo || x.surge || x.sync || x.scan) && x.taps.length) {
+      let at = x.scroll ? 2.2 : i === 0 ? 1.4 : Math.min(1.9, Math.max(1.1, x.taps[0].at * .8)); x.taps.forEach((q, j) => { if (j) at += Math.min(1.0, Math.max(.8, q.at - x.taps[j - 1].at)); q.at0 = q.at; q.at = at; });
+      if (x.sleep) x.sleep = [x.taps[0].at, x.taps[1].at];
+      d = at + (nx && nx.tr === 'tap' ? .3 : .8);
+    } else if (!(x.logo || x.surge || x.sync || x.scan || x.scroll || x.scrollIn || x.overlay)) d = Math.min(d, 2.6);
+    x.t0 = t; x.t1 = t + d; t += d;
+  });
+}
+window.DURATION = shots[shots.length - 1].t1;
+
+// ── 장면 DOM
+const stage = document.getElementById('stage'), fx = document.getElementById('fx'), g = fx.getContext('2d');
+const el = (p, h) => { const d = document.createElement('div'); d.innerHTML = h.trim(); const n = d.firstChild; fx.parentNode === p ? p.insertBefore(n, fx) : p.appendChild(n); return n; };
+const imgs = {}, waits = [];
+const geo = n => { const i = imgs[n]; const h = 1920 * i.naturalHeight / i.naturalWidth; return { h, top: h < 1080 ? (1080 - h) / 2 : 0 }; };
+function pic(parent, n) { const i = document.createElement('img'); i.src = `s/${n}.png`; parent.appendChild(i); if (!imgs[n]) { imgs[n] = i; waits.push(i.decode()); } return i; }
+shots.forEach((s, i) => {
+  if (s.logo) return;
+  s.root = el(stage, '<div class="scene"></div>'); s.root.style.zIndex = i;
+  s.inner = document.createElement('div'); s.inner.style.cssText = 'position:absolute;inset:0'; s.root.appendChild(s.inner);
+  if (s.sync) { s.fromImg = pic(s.inner, s.sync.from); s.toWrap = document.createElement('div'); s.toWrap.className = 'clip'; s.inner.appendChild(s.toWrap); s.mainImg = pic(s.toWrap, s.img); if (s.sync.pre) s.preImg = pic(s.toWrap, s.sync.pre); return; }
+  if (s.waveFrom) { s.fromImg = pic(s.inner, s.waveFrom.img); s.toWrap = document.createElement('div'); s.toWrap.className = 'clip'; s.inner.appendChild(s.toWrap); s.mainImg = pic(s.toWrap, s.base || s.img); }
+  else if (s.popup) { const [px, py, pw, ph] = s.popup.map(v => v * S);
+    s.mainImg = pic(s.inner, 'M_home');
+    s.dimL = document.createElement('div'); s.dimL.className = 'clip'; s.dimL.style.clipPath = `path(evenodd, 'M0 0H1920V1080H0Z M${px} ${py}h${pw}v${ph}h-${pw}Z')`; pic(s.dimL, s.img); s.inner.appendChild(s.dimL);
+    s.popL = document.createElement('div'); s.popL.className = 'clip'; s.popL.style.clipPath = `inset(${py}px ${1920 - px - pw}px ${1080 - py - ph}px ${px}px round 18px)`; pic(s.popL, s.img); s.inner.appendChild(s.popL); }
+  else s.mainImg = pic(s.inner, s.base || s.img);
+  if (s.scrollIn) { const prev = shots[i - 1]; s.hdr = s.scrollIn * S;
+    s.oldWrap = document.createElement('div'); s.oldWrap.className = 'clip'; s.oldWrap.style.clipPath = `inset(${s.hdr}px 0 0 0)`; s.inner.appendChild(s.oldWrap); s.bgImg = pic(s.oldWrap, 'X_meal_bg'); s.oldImg = pic(s.oldWrap, 'X_bulgogi_fg');
+    s.newWrap = document.createElement('div'); s.newWrap.className = 'clip'; s.newWrap.style.clipPath = `inset(${s.hdr}px 0 0 0)`; s.inner.appendChild(s.newWrap); s.newImg = pic(s.newWrap, 'X_dessert_fg'); }
+  if (s.sleep) { const K = 1920 / 2048;
+    s.roll = el(s.inner, `<div style="position:absolute;left:${1128 * K}px;top:${618 * K}px;width:${300 * K}px;height:${123 * K}px;overflow:hidden"></div>`);
+    s.col = el(s.roll, `<div style="position:absolute;left:0;top:0">${['04:30', '05:30', '06:30'].map((v, i) => `<div class="txt" style="left:0;top:${i * 123 * K}px;font-size:${96 * K}px;line-height:${123 * K}px">${v}</div>`).join('')}</div>`);
+    s.rests = ['3h of rest', '4h of rest', '5h of rest'].map(v => el(s.inner, `<div class="txt" style="left:${1023 * K}px;top:${908 * K}px;font-size:${44 * K}px;line-height:${56 * K}px;transform:translateX(-50%)">${v}</div>`)); }
+  if (s.scan) { s.cam = document.createElement('img'); s.cam.style.cssText = 'position:absolute;border-radius:26px;object-fit:cover'; s.cam.src = '../lounge/screens2x/cam/001.png'; s.inner.appendChild(s.cam);
+    s.scanEls = el(s.inner, '<div style="position:absolute;inset:0"></div>'); }
+  s.taps.forEach(t => {
+    // 눌림/선택 레이어: 해당 영역만 잘라서 표시
+    const [x, y, w, h, rad] = t.r.map(v => v * S);
+    const mk = n => { const c = document.createElement('div'); c.className = 'clip'; c.style.clipPath = `inset(${y}px ${1920 - x - w}px ${1080 - y - h}px ${x}px round ${rad}px)`; c.style.transformOrigin = `${x + w / 2}px ${y + h / 2}px`; pic(c, n); s.inner.appendChild(c); c.style.visibility = 'hidden'; return c; };
+    t.patch = document.createElement('div'); t.patch.style.cssText = 'position:absolute;visibility:hidden'; s.inner.appendChild(t.patch); t.patchSrc = t.sel && s.base ? s.base : (s.base || s.img);
+    t.pressL = mk(t.sel && s.base ? s.base : s.img); // 누르는 동안: 선택 전 모습이 눌림
+    if (t.sel) t.selL = mk(s.img); // 선택 상태는 눌림 레이어 위에서, 같이 눌렸다가 같이 돌아옴
+  });
+});
+const place = (s, y) => s.inner.querySelectorAll('img').forEach(i => { if (i === s.cam || i === s.oldImg || i === s.newImg || i === s.bgImg || i === s.fromImg && s.waveFrom) return; const n = i.getAttribute('src').slice(2, -4); const { h, top } = geo(n); i.style.height = h + 'px'; i.style.top = (top - y) + 'px'; });
+
+// ── 오버레이 그리기
+function touchDot(x, y, k, rel, dark) {
+  const c = dark ? '11,20,69' : '255,255,255', m = dark ? .9 : 1; // 은은한 손가락 자국: 누를 때 작아지고 뗄 때 옅은 파동
+  if (k <= 0 && rel <= 0) return;
+  if (k > 0) { g.fillStyle = `rgba(${c},${.28 * m * k})`; g.beginPath(); g.arc(x, y, 30 - 6 * k, 0, 7); g.fill(); }
+  if (rel > 0 && rel < 1) { g.strokeStyle = `rgba(${c},${.4 * m * (1 - rel)})`; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 26 + 50 * chewy(rel), 0, 7); g.stroke(); }
+}
+const bz = (a, c, b, t) => [(1 - t) ** 2 * a[0] + 2 * (1 - t) * t * c[0] + t * t * b[0], (1 - t) ** 2 * a[1] + 2 * (1 - t) * t * c[1] + t * t * b[1]];
+function comet(a, c, b, t, len, w) { // 이어진 꼬리, 그라데이션으로 사라짐
+  const n = 48, L = [], R = [];
+  for (let i = 0; i <= n; i++) {
+    const tt = Math.max(0, t - len * (1 - i / n)), p = bz(a, c, b, tt), q = bz(a, c, b, Math.min(1, tt + .002));
+    const dx = q[0] - p[0], dy = q[1] - p[1], m = Math.hypot(dx, dy) || 1, hw = w / 2 * Math.pow(i / n, .8);
+    L.push([p[0] - dy / m * hw, p[1] + dx / m * hw]); R.push([p[0] + dy / m * hw, p[1] - dx / m * hw]);
+  }
+  const tail = bz(a, c, b, Math.max(0, t - len)), head = bz(a, c, b, t), gr = g.createLinearGradient(tail[0], tail[1], head[0], head[1]);
+  gr.addColorStop(0, `rgba(${ORG},0)`); gr.addColorStop(.55, `rgba(${ORG},.45)`); gr.addColorStop(1, `rgba(${ORG},.95)`);
+  g.fillStyle = gr; g.beginPath(); L.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); R.reverse().forEach(p => g.lineTo(p[0], p[1])); g.closePath(); g.fill();
+}
+function point(x, y, r) { g.save(); g.shadowColor = `rgba(${ORG},.85)`; g.shadowBlur = 28; g.fillStyle = '#FFE1D2'; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill(); g.strokeStyle = `rgb(${ORG})`; g.lineWidth = 3; g.stroke(); g.restore(); }
+function halftone(x, y, k) { // 착지: 동심원 점이 퍼지며 바깥은 흰색으로
+  if (k <= 0 || k >= 1) return;
+  const spread = chewy(clamp(k * .9)), fade = 1 - clamp((k - .35) / .65);
+  for (let ring = 1; ring <= 8; ring++) {
+    const r = (26 + ring * 21) * (.55 + .45 * spread), n = Math.round(ring * 8), size = 5.2 * Math.pow(1 - ring / 9, 1.2) * (1 - .35 * spread);
+    const w = Math.pow((ring - 1) / 7, 1.1), col = [lerp(ORG[0], 255, w), lerp(ORG[1], 255, w), lerp(ORG[2], 255, w)].map(Math.round);
+    g.fillStyle = `rgba(${col},${.9 * fade * (1 - ring / 12)})`;
+    for (let j = 0; j < n; j++) { const an = j / n * Math.PI * 2 + ring * .35 + spread * .25; g.beginPath(); g.arc(x + Math.cos(an) * r, y + Math.sin(an) * r, size, 0, 7); g.fill(); }
+  }
+}
+const wipeClip = (e, flip) => flip ? `path('M ${1920 - e - 140} 0 C ${1920 - e + 40} 380, ${1920 - e - 90} 720, ${1920 - e + 70} 1080 L -400 1080 L -400 0 Z')` : `path('M ${e + 140} 0 C ${e - 40} 380, ${e + 90} 720, ${e - 70} 1080 L 2400 1080 L 2400 0 Z')`;
+function wipeEdge(e, a, flip) { g.save(); g.translate(flip ? 1920 : 0, 0); g.scale(flip ? -1 : 1, 1); g.shadowColor = `rgba(2,6,31,${.45 * a})`; g.shadowBlur = 40; g.shadowOffsetX = -10; g.strokeStyle = `rgba(${ORG},${.5 * a})`; g.lineWidth = 2; g.beginPath(); g.moveTo(e + 140, 0); g.bezierCurveTo(e - 40, 380, e + 90, 720, e - 70, 1080); g.stroke(); g.restore(); }
+
+// 크루 화면 세로 위치: 착지/탭 지점이 화면 안에 오도록
+const crewPan = (s, k) => s.img.startsWith('C_') ? (s.sync ? Math.max(0, (s.sync.dst[1] + s.sync.dst[3] / 2) * S - 620) : (s.scroll || 0) * S * easeInOut(k)) : 0;
+
+// 정보를 들어서 옮기는 SYNC: 출발 화면의 정보 영역이 떠오름 → 캡슐로 응축 → 와이프 위로 계속 보이며 이동 → 도착 자리에서 펼쳐짐
+function rrect(x, y, w, h, r) { r = Math.min(r, h / 2, w / 2); g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function cut(name, r, dx, dy, dw, dh, alpha, extra = '') { // 화면 이미지의 r 영역을 그대로 떼어 그림
+  const im = imgs[name], k = im.naturalWidth / 1920, top = geo(name).top;
+  g.save(); g.globalAlpha = alpha; if (extra) g.filter = extra; rrect(dx, dy, dw, dh, 18); g.clip();
+  g.drawImage(im, r[0] * S * k, (r[1] * S) * k + (top < 0 ? -top * k : 0), r[2] * S * k, r[3] * S * k, dx, dy, dw, dh); g.restore();
+}
+function wipeClipV(e) { return `path('M -10 -10 L 1930 -10 L 1930 ${e - 70} C 1300 ${e + 60}, 640 ${e - 100}, -10 ${e + 50} Z')`; }
+function wipeEdgeV(e, a) { g.save(); g.shadowColor = `rgba(2,6,31,${.45 * a})`; g.shadowBlur = 40; g.shadowOffsetY = 10; g.strokeStyle = `rgba(${ORG},${.5 * a})`; g.lineWidth = 2; g.beginPath(); g.moveTo(1930, e - 70); g.bezierCurveTo(1300, e + 60, 640, e - 100, -10, e + 50); g.stroke(); g.restore(); }
+function renderSync(s, lt) {
+  const sy = s.sync, maxPan = geo(s.img).h - 1080, base = crewPan(s, 1);
+  const pt = base + (sy.scrollAfter ? (maxPan - base) * easeInOut(prog(lt, 4.1, 2.0)) : 0); place(s, 0);
+  s.mainImg.style.top = (geo(s.img).top - pt) + 'px'; s.fromImg.style.top = geo(sy.from).top + 'px'; if (s.preImg) s.preImg.style.top = (geo(sy.pre).top - pt) + 'px';
+  const flip = sy.dir === 'left', top = sy.dir === 'top', ft = geo(sy.from).top, tt = geo(s.img).top - pt;
+  const SR = [sy.src[0] * S, sy.src[1] * S + ft, sy.src[2] * S, sy.src[3] * S], DR = [sy.dst[0] * S, sy.dst[1] * S + tt, sy.dst[2] * S, sy.dst[3] * S];
+  const a = [SR[0] + SR[2] / 2, SR[1] + SR[3] / 2], b = [DR[0] + DR[2] / 2, DR[1] + DR[3] / 2];
+  const H0 = sy.hold || 0, dr = sy.direct;
+  // 타이밍 (direct: 앞 갈래에서 이어지므로 떠오름 없이 바로 날아옴)
+  const L0 = H0 + .25, L1 = H0 + .7, C1 = dr ? 0 : H0 + 1.2, M1 = dr ? .95 : H0 + 2.9, D1 = M1 + .5;
+  const W0 = dr ? 0 : H0 + 1.35, W1 = dr ? .9 : H0 + 2.65, wk = prog(lt, W0, W1 - W0);
+  if (top) { const e = lerp(-260, 1340, chewy(wk)); s.toWrap.style.clipPath = wk <= 0 ? 'inset(0 0 100% 0)' : wk >= 1 ? 'none' : wipeClipV(e); if (wk > 0 && wk < 1) wipeEdgeV(e, Math.sin(Math.PI * wk)); }
+  else { const e = lerp(2060, -260, chewy(wk)); s.toWrap.style.clipPath = wk <= 0 ? 'inset(0 0 0 100%)' : wk >= 1 ? 'none' : wipeClip(e, flip); if (wk > 0 && wk < 1) wipeEdge(e, Math.sin(Math.PI * wk), flip); }
+  if (s.preImg) s.preImg.style.opacity = 1 - easeInOut(prog(lt, M1 + .15, .35));
+  const sc = sy.small ? .8 : 1; g.font = `${30 * sc}px KAS`; const tw = g.measureText(sy.label).width, PW = tw + 72 * sc, PH = 60 * sc;
+  const pill = (cx, cy, w, h, alpha, txt) => {
+    g.save(); g.shadowColor = `rgba(${ORG},.55)`; g.shadowBlur = 30; g.fillStyle = `rgba(248,70,19,${alpha})`; rrect(cx - w / 2, cy - h / 2, w, h, h / 2); g.fill(); g.restore();
+    if (txt > 0) { g.save(); g.globalAlpha = txt; g.fillStyle = '#fff'; g.font = `${30 * sc}px KAS`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(sy.label, cx, cy + 1); g.restore(); }
+  };
+  // 좌석 착지: 착지 후 좌석이 오렌지로 켜진 채 유지
+  if (sy.seat && lt >= M1) { const on = easeOut(prog(lt, M1, .35)); g.save(); g.shadowColor = `rgba(${ORG},.8)`; g.shadowBlur = 24 * on; g.strokeStyle = `rgba(${ORG},${on})`; g.lineWidth = 3; g.fillStyle = `rgba(248,70,19,${.28 * on})`; rrect(DR[0], DR[1], DR[2], DR[3], 8); g.fill(); g.stroke(); g.restore(); }
+  const src = dr ? (flip ? [2010, b[1] - 200] : [-90, b[1] - 220]) : a;
+  const ctrl = dr ? [(src[0] + b[0]) / 2, Math.min(src[1], b[1]) - 160] : top ? [(a[0] + b[0]) / 2 + 160, -260] : [(a[0] + b[0]) / 2 + (flip ? -1 : 1) * 120, Math.min(a[1], b[1]) - 260];
+  if (lt < L0 && !dr) return;
+  if (!dr && lt < C1) {
+    // 출발점이 은은하게 밝아졌다 사라지고 그 자리에서 캡슐이 생겨남
+    const up = chewy(prog(lt, L0, L1 - L0)), cd = chewy(prog(lt, L1, C1 - L1)), hi = up * (1 - cd);
+    if (hi > 0) cut(sy.from, sy.src, SR[0], SR[1], SR[2], SR[3], hi, `brightness(${1 + .25 * hi})`);
+    if (cd > 0) pill(a[0], a[1], PW * lerp(.6, 1, cd), PH * lerp(.6, 1, cd), cd, cd);
+    return;
+  }
+  if (lt < M1) { const k = chewy(prog(lt, C1, M1 - C1)), p = bz(src, ctrl, b, k); comet(src, ctrl, b, k, .22, 12 * sc); pill(p[0], p[1], PW, PH, 1, 1); return; }
+  const dk = chewy(prog(lt, M1, D1 - M1));
+  if (dk < 1) pill(b[0], b[1], PW * lerp(1, .55, dk), PH * lerp(1, .55, dk), 1 - dk, clamp(1 - dk * 2));
+  const gk = prog(lt, M1 + .1, 1.1), glow = gk > 0 && gk < 1 ? Math.sin(Math.PI * gk) : 0;
+  if (glow > 0 && !sy.seat) cut(s.img, sy.dst, DR[0], DR[1], DR[2], DR[3], glow, `brightness(${1 + .18 * glow})`);
+  halftone(b[0], b[1], (lt - M1 - .15) / 1.8);
+}
+// 마무리 오버레이: 화면이 흐려지며 가라앉고 태그라인이 자간이 좁혀지며 안착, 한 박자 뒤 한글 한 줄
+function renderOverlay(s, u, alpha) {
+  const k = easeInOut(prog(u, 0, 1.1)); s.root.style.filter = `blur(${14 * k}px) brightness(${1 - .55 * k})`;
+  const tk = chewy(prog(u, .5, 1.4)), kk = easeOut(prog(u, 1.3, .8));
+  g.save(); g.globalAlpha = alpha * clamp(prog(u, .5, .5)); g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '44px KAS'; g.letterSpacing = `${lerp(40, 12, tk)}px`; g.fillStyle = 'rgb(251,109,81)'; g.fillText('YOUR TIME. OUR HARMONY.', 960, 500); g.restore();
+  g.save(); g.globalAlpha = alpha * kk; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '30px KAS'; g.fillStyle = '#F1F5FF'; g.fillText('정보가 이동하고, 사람이 서비스합니다.', 960, 580 + 16 * (1 - kk)); g.restore();
+}
+
+const CARD = [872, 440, 300, 478], K2 = 1920 / 2048; // 스캔: 탑승권 영역(2048 좌표)
+function renderScan(s, u) {
+  const cx = 422 * K2, cy = 283 * K2 + geo('L02').top, cw = 1204 * K2, ch = 650 * K2;
+  Object.assign(s.cam.style, { left: cx + 'px', top: cy + 'px', width: cw + 'px', height: ch + 'px' });
+  const f = Math.min(95, 1 + Math.floor(clamp(u / 2.6) * 94)), src = `../lounge/screens2x/cam/${String(f).padStart(3, '0')}.png`;
+  const done = 2.4, z = easeOut((u - .2) / .9), tp = v => v * K2;
+  const box = [lerp(440, CARD[0] - 18, z), lerp(300, CARD[1] - 18, z), lerp(1168, CARD[2] + 36, z), lerp(618, CARD[3] + 36, z)].map(tp); box[1] += geo('L02').top;
+  // 뷰파인더 모서리는 사용자 요청으로 제거 — 스캔 라인 + 인식 반짝임만
+  const sp = clamp((u - .9) / (done - 1)), ph = sp < .5 ? easeInOut(sp * 2) : 1 - easeInOut(sp * 2 - 1), ly = tp(CARD[1] + ph * CARD[3]) + geo('L02').top;
+  const la = clamp((u - .85) / .3) * (1 - clamp((u - done) / .25));
+  if (la > 0) { const gr = g.createLinearGradient(0, ly - (sp < .5 ? 80 : -80), 0, ly); gr.addColorStop(0, 'rgba(253,94,27,0)'); gr.addColorStop(.85, `rgba(253,94,27,${.25 * la})`); gr.addColorStop(1, `rgba(255,236,226,${.95 * la})`);
+    g.fillStyle = gr; g.fillRect(tp(CARD[0] - 16), Math.min(ly, ly - (sp < .5 ? 80 : -80)), tp(CARD[2] + 32), 80); }
+  const fl = .45 * Math.max(0, 1 - Math.abs((u - done - .1) / .22)); if (fl > 0) { g.fillStyle = `rgba(255,255,255,${fl})`; g.fillRect(tp(CARD[0]), tp(CARD[1]) + geo('L02').top, tp(CARD[2]), tp(CARD[3])); }
+  if (s.cam.getAttribute('src') !== src) { s.cam.setAttribute('src', src); return s.cam.decode(); }
+}
+
+function renderSurge(lt, d) {
+  for (const [dl, alpha] of [[.15, .75], [0, 1]]) {
+    const k = chewy(prog(lt, dl, d - .15)), top = lerp(1180, -260, k), gr = g.createLinearGradient(0, top, 0, top + 1500);
+    gr.addColorStop(0, 'rgba(36,48,122,0)'); gr.addColorStop(.08, `rgba(46,58,140,${.95 * alpha})`); gr.addColorStop(.22, `rgba(251,109,81,${alpha})`); gr.addColorStop(.45, `rgba(248,70,19,${alpha})`); gr.addColorStop(1, `rgba(255,176,143,${alpha})`);
+    g.save(); g.filter = 'blur(30px)'; g.fillStyle = gr; g.beginPath(); g.ellipse(960 + (dl ? 140 : -100), top + 700, 1500, 700, 0, Math.PI, 0, false); g.lineTo(2600, 2000); g.lineTo(-700, 2000); g.closePath(); g.fill(); g.restore();
+  }
+}
+function renderEnd(lt) {
+  const end = document.getElementById("end"), logo = document.getElementById("logo"), sink = easeInOut(clamp(lt / 2.6)); // 오렌지에서 네이비로 천천히 가라앉음
+  end.style.opacity = 1;
+  end.style.background = `linear-gradient(180deg, #02061F ${lerp(-60, 0, sink)}%, #0B1445 ${lerp(-40, 55, sink)}%, #2A2466 ${lerp(-20, 82, sink)}%, #F84613 ${lerp(0, 100, sink)}%, #FB6D51 ${lerp(60, 100, sink)}%)`;
+  const k = clamp((lt - 1.7) / 1.3);
+  logo.style.opacity = easeInOut((lt - 1.7) / .6); logo.style.filter = `blur(${lerp(20, 0, chewy(k))}px)`;
+  logo.style.transform = `translate(-50%, calc(-50% + ${lerp(90, 0, chewy(k))}px))`;
+}
+
+// ── 프레임: 기존 영상 방식의 제자리 페이드 전환(이전 0.3초 사라짐 → 새 화면 0.5초 나타남)
+const OUT = .3, IN_A = .12, IN_D = .45, TR = .55;
+const easeOutQuart = p => 1 - Math.pow(1 - clamp(p), 4);
+window.render = function (t) {
+  g.clearRect(0, 0, 1920, 1080);
+  document.getElementById('end').style.opacity = 0; document.getElementById('logo').style.opacity = 0;
+  const pending = [];
+  shots.forEach((s, i) => {
+    if (!s.root) return;
+    const u = t - s.t0, next = shots[i + 1];
+    const plain = next && !next.sync && !next.logo && !next.waveFrom && !next.scrollIn;
+    const vis = u >= 0 && (t < s.t1 || (plain && t < s.t1 + TR) || (next && next.logo && t < s.t1 + .01));
+    s.root.style.transform = ''; s.root.style.transformOrigin = ''; s.root.style.clipPath = ''; s.root.style.filter = '';
+    s.root.style.display = vis ? 'block' : 'none'; if (!vis) return;
+    const pin = (i === 0 || s.sync || s.surge || s.waveFrom || s.scrollIn || s.tr === 'tap') ? 1 : easeInOut(u / IN_D);
+    const pout = 1; // 이전 화면은 그대로 두고 새 화면이 위에서 겹쳐 나타남(크로스페이드)
+    s.root.style.opacity = i === 0 ? clamp(u / .5) : pin * pout;
+    if (t >= s.t1 && next && (next.sync || next.surge)) return;
+    if (s.sync) return renderSync(s, u);
+    const k = clamp(u / (s.t1 - s.t0)), pan = crewPan(s, clamp((u - .5) / 1.4));
+    place(s, pan);
+    if (s.waveFrom) { // 물결 와이프 (크루 → 모니터: 왼쪽으로)
+      const pf = s.waveFrom, pp = crewPan(pf, 1) + (pf.sync && pf.sync.scrollAfter ? geo(pf.img).h - 1080 - crewPan(pf, 1) : 0);
+      s.fromImg.style.height = geo(pf.img).h + 'px'; s.fromImg.style.top = (geo(pf.img).top - pp) + 'px';
+      const wk = prog(u, .05, 1.2), e = lerp(2060, -260, chewy(wk));
+      s.fromImg.style.display = wk >= 1 ? 'none' : 'block';
+      s.toWrap.style.clipPath = wk <= 0 ? 'inset(0 0 0 100%)' : wk >= 1 ? 'none' : wipeClip(e, true);
+      if (wk > 0 && wk < 1) wipeEdge(e, Math.sin(Math.PI * wk), true);
+    }
+    if (s.scrollIn) { // 헤더는 그대로, 내용과 사진만 위로 스크롤되며 다음 내용이 아래에서 올라옴
+      const sk = easeInOut(prog(u, .02, .85)), D = 1080 - s.hdr;
+      s.mainImg.style.clipPath = sk >= 1 ? 'none' : `inset(0 0 ${1080 - s.hdr}px 0)`;
+      s.oldWrap.style.display = s.newWrap.style.display = sk >= 1 ? 'none' : 'block';
+      const prev = shots[i - 1]; s.oldImg.style.height = s.bgImg.style.height = geo(prev.img).h + 'px'; s.newImg.style.height = geo(s.img).h + 'px'; s.bgImg.style.top = geo(prev.img).top + 'px';
+      s.oldImg.style.top = (geo(prev.img).top - D * sk) + 'px'; s.newImg.style.clipPath = `inset(${s.hdr - geo(s.img).top}px 0 0 0)`; s.newImg.style.top = (geo(s.img).top + D * (1 - sk)) + 'px';
+    }
+    s.taps.forEach(tq => {
+      const [x, y, w, h] = tq.r.map(v => v * S), yy = y - pan, tk = tapK(u, tq.at), rel = prog(u, tq.at + TAP_UP, .6);
+      // 눌림: 버튼은 작아지며 어두워짐, 카드는 그 영역만 어두워짐
+      const P = 10, rad = (tq.r[4] || 12) * S + P, ins = `inset(${yy - P}px ${1920 - x - w - P}px ${1080 - yy - h - P}px ${x - P}px round ${rad}px)`;
+      tq.pressL.style.clipPath = ins; tq.pressL.style.transformOrigin = `${x + w / 2}px ${yy + h / 2}px`;
+      Object.assign(tq.patch.style, { left: x - 5 + 'px', top: yy - 5 + 'px', width: w + 10 + 'px', height: h + 10 + 'px', borderRadius: (tq.r[4] || 12) * S + 5 + 'px', filter: 'blur(3px)' });
+      const pop = 0;
+      tq.pressL.style.visibility = tk > 0 || (pop > .01 && !tq.sel) ? 'visible' : 'hidden'; tq.patch.style.visibility = tq.pressL.style.visibility;
+      tq.pressL.style.transform = `scale(${1 - (tq.btn ? .11 : .045) * tk + (tq.btn ? .035 : .015) * pop})`; tq.pressL.style.filter = `brightness(${1 - (tq.btn ? .32 : .22) * tk + .12 * pop})`;
+      const P0 = 2, inner = `inset(${yy - P0}px ${1920 - x - w - P0}px ${1080 - yy - h - P0}px ${x - P0}px round ${(tq.r[4] || 12) * S + P0}px)`; tq.pressL.style.clipPath = inner;
+      if (tq.sel) { tq.selL.style.visibility = 'visible'; tq.selL.style.opacity = u >= tq.at + TAP_UP ? 1 : 0; /* 떼는 프레임에 바로 선택 상태로 */ tq.selL.style.clipPath = ins; tq.selL.style.transformOrigin = `${x + w / 2}px ${yy + h / 2}px`; tq.selL.style.transform = tq.pressL.style.transform.replace(/scale(([^)]+))/, (m, v) => `scale(${Math.max(+v, 1 - .045 * tk) + .015 * pop})`); tq.selL.style.filter = `brightness(${1 - .22 * tk})`;
+        if (tq.rise) { const rk = easeOut(prog(u, tq.at + TAP_UP, .35)); tq.selL.style.opacity = u >= tq.at + TAP_UP ? 1 : 0; tq.selL.style.translate = `0 ${tq.rise * S * (1 - rk)}px`; } }
+      touchDot(x + w / 2, yy + h / 2, tk, u > tq.at + TAP_UP ? rel : 0, s.img.startsWith('C_'));
+    });
+    // 선택 레이어가 눌림 레이어 위로 오지 않게: 눌리는 동안엔 눌림 레이어가 위
+    if (s.sleep) { const [k1, k2] = s.sleep, k = chewy((u - k1 - TAP_UP + .05) / .5) + chewy((u - k2 - TAP_UP + .05) / .5);
+      s.col.style.transform = `translateY(${-123 * 1920 / 2048 * k}px)`; s.rests.forEach((e, i) => e.style.opacity = clamp(1 - Math.abs(k - i) * 1.5)); }
+    if (s.popup) { const pk = easeOutQuart(prog(u, .12, .55)); s.dimL.style.opacity = easeInOut(prog(u, 0, .4)); s.popL.style.opacity = clamp(prog(u, .12, .25)); s.popL.style.transform = `translateY(${90 * (1 - pk)}px)`; }
+    if (s.overlay || s.afterOverlay) renderOverlay(s, s.afterOverlay ? 9 : u, s.afterOverlay ? 1 - easeInOut(prog(u, 0, 1.2)) : 1);
+    if (s.scan) pending.push(renderScan(s, u));
+    if (s.surge) renderSurge(u, s.t1 - s.t0);
+  });
+  // 앱처럼 화면 전환: 이전 화면과 새 화면을 함께 움직임
+  shots.forEach((s, i) => {
+    if (!s.tr || s.tr === 'fade' || !s.root || t < s.t0 || t > s.t0 + TR) return;
+    const k = easeOutQuart((t - s.t0) / TR), p = shots[i - 1];
+    // 이전 화면은 제자리에서 빠르게 사라지고(0.18초), 새 화면은 누른 곳을 중심으로 살짝 떠오르며 나타남
+    const pan = crewPan(p, 1), [x, y, w, h] = s.zr.map(v => v * S), ox = x + w / 2, oy = y - pan + h / 2;
+    s.root.style.opacity = easeOutQuart((t - s.t0) / .3);
+    s.root.style.transform = `scale(${1.012 + .02 * (1 - k)})`;
+    p.root.style.opacity = 1 - easeOutQuart((t - s.t0) / .18);
+  });
+  const last = shots[shots.length - 1]; if (t >= last.t0) renderEnd(t - last.t0);
+  return Promise.all(pending);
+};
+window.ready = Promise.all([...waits, document.fonts.load('96px KAS')]).then(() => {
+  // 패치 색: 영역 바로 바깥 위/아래 테두리의 평균색 → 세로 그라데이션
+  const cvs = {}, ctxOf = n => { if (cvs[n]) return cvs[n]; const i = imgs[n], c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(i, 0, 0); return cvs[n] = x; };
+  const avg = (x, k, y0, x0, x1) => { const d = x.getImageData(Math.round(x0 * k), Math.max(0, Math.round(y0 * k)), Math.max(1, Math.round((x1 - x0) * k)), 3).data; let r = 0, g2 = 0, b = 0, n = d.length / 4; for (let i = 0; i < d.length; i += 4) { r += d[i]; g2 += d[i + 1]; b += d[i + 2]; } return `rgb(${r / n | 0},${g2 / n | 0},${b / n | 0})`; };
+  shots.forEach(s => (s.taps || []).forEach(t => { const x = ctxOf(t.patchSrc), k = imgs[t.patchSrc].naturalWidth / 1920, top = geo(t.patchSrc).top, [rx, ry, rw, rh] = t.r.map(v => v * S), M = 16;
+    t.patch.style.background = `linear-gradient(180deg, ${avg(x, k, ry - M - top, rx, rx + rw)}, ${avg(x, k, ry + rh + M - 3 - top, rx, rx + rw)})`; }));
+}).then(() => document.querySelector('#logo img').decode());
+</script></body></html>

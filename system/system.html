@@ -1,0 +1,364 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>MERIDIEN · UI System Motion</title>
+<style>
+@font-face { font-family: KAS; font-weight: 400; src: local('KoreanAirSansKR'), local('KoreanAirSansKR Regular'), url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+@font-face { font-family: KAS; font-weight: 700; src: local('KoreanAirSansKR Bold'), url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #040A2E; }
+#bg { position: absolute; inset: 0; background: radial-gradient(1400px 900px at 50% 45%, #0B1A5C 0%, #060F3E 55%, #030824 100%); }
+.dev { position: absolute; overflow: hidden; border-radius: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.45), 0 0 0 1px rgba(116,152,236,.18); opacity: 0; }
+.inner { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.inner img { position: absolute; left: 0; top: 0; }
+.ov { position: absolute; box-sizing: border-box; }
+.t { position: absolute; font-family: KAS; color: #F1F5FF; white-space: nowrap; letter-spacing: -0.01em; }
+#svg { position: absolute; inset: 0; pointer-events: none; }
+.label { position: absolute; font-family: KAS; color: #F1F5FF; opacity: 0; }
+.eyebrow { font-weight: 700; font-size: 22px; letter-spacing: .14em; color: #F84613; }
+.ttl { font-weight: 700; font-size: 56px; letter-spacing: .02em; margin-top: 10px; }
+.sub { font-size: 24px; color: #C3D4F9; margin-top: 14px; }
+</style></head>
+<body><div id="bg"></div><div id="world"></div><svg id="svg" width="1920" height="1080"></svg><div id="hud"></div>
+<script>
+// ───────────── 시간표 (초) ─────────────
+const T = {
+  intro: [0, 3.0],
+  flight: [3.0, 4.6], drink: [4.6, 6.0], diet: [6.0, 7.6],
+  meal: [7.6, 10.4], sleep: [10.4, 13.0], wake: [13.0, 15.6],
+  schedule: [15.6, 21.6], confirm: [21.6, 25.0],
+  sync1: [25.0, 32.5],
+  monTitle: [32.5, 35.0], home: [35.0, 39.0], journey: [39.0, 42.5], adjust: [42.5, 49.5],
+  assist: [49.5, 52.5], approach: [52.5, 55.8], request: [55.8, 59.6],
+  sync2: [59.6, 66.0],
+  crewTitle: [66.0, 68.4], seat: [68.4, 72.6], prep: [72.6, 76.4], done: [76.4, 80.0],
+  feedback: [80.0, 85.4],
+  final: [85.4, 96.0],
+};
+const DURATION = 96.0;
+
+// ───────────── 기본 함수 ─────────────
+const clamp = p => p < 0 ? 0 : p > 1 ? 1 : p;
+const eo = p => 1 - Math.pow(1 - clamp(p), 3);
+const eio = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const lerp = (a, b, p) => a + (b - a) * p;
+const seg = (t, [a, b]) => clamp((t - a) / (b - a));
+const inn = (t, [a, b]) => t >= a && t < b;
+const fadeIn = (t, a, d = .45) => eo((t - a) / d);
+const fadeOut = (t, b, d = .45) => 1 - eio((t - (b - d)) / d);
+const world = document.getElementById('world'), hud = document.getElementById('hud'), svg = document.getElementById('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const S = 'screens/';
+const ORG = '#F84613';
+
+// ───────────── 디바이스(화면) ─────────────
+// FW,FH = Figma 프레임 좌표계. 이미지는 그 크기로 깔고 inner를 스케일
+function device(src, FW, FH) {
+  const root = document.createElement('div'); root.className = 'dev'; world.appendChild(root);
+  const inner = document.createElement('div'); inner.className = 'inner'; inner.style.width = FW + 'px'; inner.style.height = FH + 'px'; root.appendChild(inner);
+  const im = document.createElement('img'); im.src = S + src + '.png'; im.style.width = FW + 'px'; im.style.height = FH + 'px'; inner.appendChild(im);
+  return { root, inner, FW, FH, r: null };
+}
+// x,y,w: 화면 위 위치/폭, op: 투명도, zoom: {s, fx, fy} 프레임 좌표 기준 줌
+function place(d, x, y, w, op, zoom) {
+  const h = w * d.FH / d.FW, k = w / d.FW, s = zoom ? zoom.s : 1, fx = zoom ? zoom.fx : 0, fy = zoom ? zoom.fy : 0;
+  const tx = (1 - s) * fx * k, ty = (1 - s) * fy * k;
+  d.root.style.left = x + 'px'; d.root.style.top = y + 'px'; d.root.style.width = w + 'px'; d.root.style.height = h + 'px';
+  d.root.style.opacity = op; d.root.style.display = op > 0.001 ? 'block' : 'none';
+  d.inner.style.transform = `translate(${tx}px,${ty}px) scale(${k * s})`;
+  d.r = { x, y, w, h, k, s, tx, ty };
+}
+// 프레임 좌표 → 화면 좌표
+const G = (d, px, py) => [d.r.x + d.r.tx + px * d.r.k * d.r.s, d.r.y + d.r.ty + py * d.r.k * d.r.s];
+function ov(d, html) { const n = document.createElement('div'); n.innerHTML = html.trim(); const e = n.firstChild; d.inner.appendChild(e); return e; }
+
+const L = {}, M = {}, C = {};
+['L01_flight','L02_drink','L03_diet','L04_meal','L05_sleep','L06_wake','L07_schedule','L08_confirm'].forEach(n => L[n.slice(0,3)] = device(n, 2048, 1152));
+['M01_home','M02_journey','M03_adjust','M04_assist','M05_approach','M06_confirm','M07_completed'].forEach(n => M[n.slice(0,3)] = device(n, 1015, 572));
+M.M03.FW = 1011; M.M03.FH = 570; M.M03.inner.style.width = '1011px'; M.M03.inner.style.height = '570px'; M.M03.inner.firstChild.style.width = '1011px'; M.M03.inner.firstChild.style.height = '570px';
+['C01_seat','C02_map','C03_task'].forEach(n => C[n.slice(0,3)] = device(n, 1280, 1024));
+
+// ───────────── 화면 위 오버레이 (기존 UI 위 상태 변화만) ─────────────
+// 탭 링
+function ring(d, cx, cy, r) { return ov(d, `<div class="ov" style="left:${cx - r}px;top:${cy - r}px;width:${2 * r}px;height:${2 * r}px;border-radius:50%;border:3px solid ${ORG};opacity:0"></div>`); }
+function tapRing(e, t, at, grow = 1.6) { const p = (t - at) / .55; if (p < 0 || p > 1) { e.style.opacity = 0; return; } e.style.opacity = (1 - p) * .9; e.style.transform = `scale(${1 + (grow - 1) * eo(p)})`; }
+// 선택 강조 테두리
+function hilite(d, x, y, w, h, rad = 24) { return ov(d, `<div class="ov" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;border-radius:${rad}px;border:4px solid ${ORG};box-shadow:0 0 0 0 rgba(248,70,19,.0);opacity:0"></div>`); }
+function glow(e, t, a, b) { const p = Math.min(fadeIn(t, a, .4), fadeOut(t, b, .5)); e.style.opacity = p; e.style.boxShadow = `0 0 ${24 * p}px ${6 * p}px rgba(248,70,19,${.35 * p})`; }
+
+// Flight Schedule로 들어오는 칩 (라운지 선택값)
+const chipCss = 'font-family:KAS;font-weight:700;font-size:34px;color:#fff;background:#F84613;border-radius:999px;padding:12px 28px;white-space:nowrap';
+const chips = [['First Meal · 00:50', 1179], ['Sleep · 01:30', 869], ['Wake-up · 06:30', 1489]].map(([s, x]) => ({ e: ov(L.L07, `<div class="ov" style="${chipCss};opacity:0">${s}</div>`), x }));
+const docks = [1179, 869, 1489].map(x => ov(L.L07, `<div class="ov" style="left:${x - 96}px;top:508px;width:192px;height:192px;border-radius:50%;border:4px solid ${ORG};opacity:0"></div>`));
+// Confirm/Done 버튼
+const doneRing = ring(L.L08, 1701, 1050, 70);
+// My Journey: 라운지 설정값 (기존 값 위에 같은 글꼴로)
+const patch = (d, x, y, w, h) => ov(d, `<div class="ov" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px;background:#0C1446;box-shadow:0 0 14px 10px #0C1446;border-radius:8px"></div>`);
+patch(M.M02, 290, 490, 170, 34); patch(M.M02, 530, 490, 170, 34); patch(M.M02, 778, 446, 170, 36);
+ov(M.M02, `<div class="t" style="left:295px;top:490px;font-size:22px;font-weight:700">01:30 – 06:30</div>`);
+ov(M.M02, `<div class="t" style="left:535px;top:490px;font-size:22px;font-weight:700">06:00 · Crew</div>`);
+ov(M.M02, `<div class="t" style="left:782px;top:443px;font-size:37px;font-weight:700">Allergy</div>`);
+const synced = ov(M.M02, `<div class="ov" style="left:383px;top:104px;padding:6px 16px;border-radius:999px;background:#0F2A89;border:1px solid #2D57CD;font-family:KAS;font-weight:700;font-size:14px;color:#F1F5FF;white-space:nowrap;opacity:0"><span style="color:${ORG}">●</span>&nbsp; Synced from Lounge Pad</div>`);
+// Adjust: Change Time 터치 → Home 타임라인 06:00 → 07:00
+const changeRing = ring(M.M03, 420, 358, 46);
+const roll1 = ov(M.M01, `<div class="ov" style="left:500px;top:390px;width:68px;height:30px;overflow:hidden"><div class="t" style="position:relative;font-size:17.5px;line-height:30px;text-align:center;width:68px">06:00<br>07:00</div></div>`);
+const roll2 = ov(M.M01, `<div class="ov" style="left:376px;top:214px;width:164px;height:36px;overflow:hidden"><div class="t" style="position:relative;font-size:20px;line-height:36px;width:164px;text-align:left;color:#C3D4F9">06:00 · in 15 min<br>07:00 · in 75 min</div></div>`);
+[roll1, roll2].forEach(r => { r.firstChild.style.background = 'transparent'; });
+const bgRoll1 = ov(M.M01, `<div class="ov" style="left:500px;top:390px;width:68px;height:30px;background:#0E1B5C;filter:blur(2px);opacity:0"></div>`);
+const bgRoll2 = ov(M.M01, `<div class="ov" style="left:372px;top:216px;width:168px;height:32px;background:#0A1650;filter:blur(3px);opacity:0"></div>`);
+M.M01.inner.appendChild(roll1); M.M01.inner.appendChild(roll2);
+const homeHi = hilite(M.M01, 488, 384, 92, 42, 12);
+const gaugeHi = hilite(M.M01, 828, 20, 166, 46, 23);
+// Assist / Approach / Request
+const assistHi = hilite(M.M04, 62, 368, 434, 110, 16), assistRing = ring(M.M04, 270, 423, 40);
+const apprHi = hilite(M.M05, 165, 252, 698, 80, 14), contRing = ring(M.M05, 850, 526, 40);
+// Crew: Seat 12A 착지, Task 카드, 상태 변화
+const seatPulse = ov(C.C02, `<div class="ov" style="left:248px;top:364px;width:48px;height:48px;border-radius:12px;border:4px solid ${ORG};opacity:0"></div>`);
+const taskCard = ov(C.C02, `<div class="ov" style="left:310px;top:430px;width:300px;padding:18px 22px;border-radius:16px;background:#fff;box-shadow:0 18px 40px rgba(5,23,102,.28);border-left:6px solid ${ORG};font-family:KAS;opacity:0">
+  <div style="font-size:13px;font-weight:700;letter-spacing:.12em;color:${ORG}">SEAT 12A</div>
+  <div style="font-size:22px;font-weight:700;color:#051766;margin-top:6px">ASSIST REQUEST</div>
+  <div style="font-size:15px;color:#2D3A70;margin-top:6px">Approach discreetly · 조용히 와주세요</div></div>`);
+const statusBox = ov(C.C02, `<div class="ov" style="left:643px;top:236px;width:238px;height:96px;background:#fff;opacity:0"></div>`);
+const rows = ['접수 · Received', '준비 중 · Preparing', '완료 · Completed'].map((s, i) => ov(C.C02, `<div class="t" style="left:678px;top:${244 + i * 29}px;font-size:12px;color:#5B6280;opacity:0">${s}</div>`));
+const pillS = ov(C.C02, `<div class="ov" style="left:664px;top:${239}px;width:206px;height:26px;border-radius:13px;background:${ORG};opacity:0"></div>`);
+const checkS = ov(C.C02, `<div class="ov" style="left:842px;top:${239 + 58}px;width:24px;height:24px;border-radius:50%;background:#fff;color:${ORG};font:700 16px/24px KAS;text-align:center;opacity:0">✓</div>`);
+C.C02.inner.insertBefore(statusBox, rows[0]); C.C02.inner.insertBefore(pillS, rows[0]);
+const panelPill = ov(C.C02, `<div class="ov" style="left:1132px;top:361px;width:62px;height:26px;border-radius:13px;background:#fff;font:700 12px/26px KAS;color:#051766;text-align:center;opacity:0">완료</div>`);
+// Seat detail: 라운지 일정 + 새 요청을 한 좌석에서
+const seatSched = ov(C.C03, `<div class="ov" style="left:430px;top:720px;width:640px;padding:12px 18px;border-radius:14px;background:#EEF2FB;font-family:KAS;font-size:15px;color:#051766;white-space:nowrap;opacity:0"><b style="color:${ORG}">FROM LOUNGE</b>&nbsp;&nbsp; First Meal 00:50 · Sleep 01:30 · Wake-up 06:00 · Crew</div>`);
+const seatPanelHi = hilite(C.C01, 887, 152, 342, 560, 18);
+
+// ───────────── 라벨 / 텍스트 ─────────────
+function label(html, x, y, align = 'left') { const n = document.createElement('div'); n.className = 'label'; n.style.left = x + 'px'; n.style.top = y + 'px'; n.style.textAlign = align; n.innerHTML = html; hud.appendChild(n); return n; }
+const big = (e, t, a, b, rise = 16) => { const p = Math.min(fadeIn(t, a, .6), fadeOut(t, b, .5)); e.style.opacity = p; e.style.transform = `translateY(${rise * (1 - fadeIn(t, a, .6))}px)`; };
+const introL = label(`<div class="eyebrow">01 · LOUNGE PAD</div><div class="ttl">PLAN</div><div class="sub">비행 전, 나의 여정을 미리 계획합니다.</div>`, 0, 420, 'center'); introL.style.width = '1920px';
+const monL = label(`<div class="eyebrow">02 · PASSENGER MONITOR</div><div class="ttl">CHECK · ADJUST · REQUEST</div><div class="sub">비행 중, 나의 일정을 확인하고 조정하며 필요한 서비스를 요청합니다.</div>`, 0, 420, 'center'); monL.style.width = '1920px';
+const crewL = label(`<div class="eyebrow">03 · CREW PAD</div><div class="ttl">PREPARE · SERVE</div><div class="sub">승객의 일정과 요청을 확인하고 실제 서비스로 연결합니다.</div>`, 0, 420, 'center'); crewL.style.width = '1920px';
+const tagCss = 'font-family:KAS;font-weight:700;font-size:20px;letter-spacing:.12em';
+const corner = label(`<span style="${tagCss};color:#F84613" id="c1"></span><span style="${tagCss};color:#9FBAF5;margin-left:14px" id="c2"></span>`, 64, 48);
+const cap = label('', 0, 1000, 'center'); cap.style.width = '1920px'; cap.style.fontSize = '26px'; cap.style.color = '#C3D4F9';
+const syncTag = label('', 0, 0); syncTag.style.cssText += `;${tagCss};padding:8px 18px;border-radius:999px;background:${ORG};color:#fff;font-size:22px`;
+const devTags = ['LOUNGE PAD', 'PASSENGER MONITOR', 'CREW PAD'].map(s => label(`<div style="${tagCss};font-size:18px;color:#9FBAF5">${s}</div>`, 0, 0, 'center'));
+const finalTags = [['LOUNGE PAD','PLAN'],['PASSENGER MONITOR','CHECK · ADJUST · REQUEST'],['CREW PAD','PREPARE · SERVE']].map(([a, b]) => label(`<div style="${tagCss};font-size:20px;color:#9FBAF5">${a}</div><div style="font-family:KAS;font-weight:700;font-size:28px;margin-top:8px">${b}</div>`, 0, 0, 'center'));
+const copy = label(`<div style="font-family:KAS;font-weight:700;font-size:54px;letter-spacing:-.01em">정보가 이동하고, 사람이 서비스합니다.</div>`, 0, 470, 'center'); copy.style.width = '1920px';
+const logo = label(`<div style="font-family:KAS;font-weight:700;font-size:64px;letter-spacing:.42em;margin-left:.42em">MERIDIEN</div><div style="width:120px;height:3px;background:${ORG};margin:22px auto 0"></div>`, 0, 470, 'center'); logo.style.width = '1920px';
+function setCorner(a, b) { document.getElementById('c1').textContent = a; document.getElementById('c2').textContent = b; }
+
+// ───────────── SVG: 곡선 경로 + 오렌지 포인트 ─────────────
+function mk(tag, attrs) { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.appendChild(e); return e; }
+const paths = [0, 1, 2, 3].map(() => mk('path', { fill: 'none', stroke: ORG, 'stroke-width': 3, 'stroke-linecap': 'round', opacity: 0 }));
+const dots = [0, 1, 2].map(() => mk('circle', { r: 10, fill: ORG, opacity: 0 }));
+const halos = [0, 1, 2].map(() => mk('circle', { r: 26, fill: 'none', stroke: ORG, 'stroke-width': 2, opacity: 0 }));
+const qb = (p0, c, p1, u) => [(1 - u) ** 2 * p0[0] + 2 * (1 - u) * u * c[0] + u * u * p1[0], (1 - u) ** 2 * p0[1] + 2 * (1 - u) * u * c[1] + u * u * p1[1]];
+// 포물선: 두 점 사이 위로 솟는 제어점
+const arcCtl = (a, b, lift) => [(a[0] + b[0]) / 2, Math.min(a[1], b[1]) - lift];
+function drawArc(pe, a, b, lift, prog, op, width = 3) {
+  const c = arcCtl(a, b, lift), n = 40, k = Math.max(1, Math.round(n * clamp(prog)));
+  let d = `M ${a[0]} ${a[1]}`; for (let i = 1; i <= k; i++) { const p = qb(a, c, b, i / n * Math.min(1, prog) * n / k * (k / n) * (n / k) ); }
+  d = `M ${a[0]} ${a[1]}`; for (let i = 1; i <= 40; i++) { const u = i / 40 * clamp(prog); const p = qb(a, c, b, u); d += ` L ${p[0]} ${p[1]}`; }
+  pe.setAttribute('d', d); pe.setAttribute('opacity', op); pe.setAttribute('stroke-width', width);
+  return qb(a, c, b, clamp(prog));
+}
+function dot(i, p, op, r = 10) { dots[i].setAttribute('cx', p[0]); dots[i].setAttribute('cy', p[1]); dots[i].setAttribute('opacity', op); dots[i].setAttribute('r', r); }
+function halo(i, p, t, at) { const q = (t - at) / .7; if (q < 0 || q > 1) { halos[i].setAttribute('opacity', 0); return; } halos[i].setAttribute('cx', p[0]); halos[i].setAttribute('cy', p[1]); halos[i].setAttribute('r', 12 + 46 * eo(q)); halos[i].setAttribute('opacity', (1 - q) * .8); }
+function clearFx() { paths.forEach(p => p.setAttribute('opacity', 0)); dots.forEach(d => d.setAttribute('opacity', 0)); halos.forEach(h => h.setAttribute('opacity', 0)); }
+
+// ───────────── 레이아웃 상수 ─────────────
+const BIG_L = { x: 210, y: 118, w: 1500 }, BIG_M = { x: 210, y: 118, w: 1500 }, BIG_C = { x: 380, y: 60, w: 1160 };
+const all = [...Object.values(L), ...Object.values(M), ...Object.values(C)];
+const hideAll = () => all.forEach(d => { d.root.style.opacity = 0; d.root.style.display = 'none'; });
+// 한 디바이스 안 화면 전환: 이전 화면 위에 다음 화면이 살짝 올라오며 겹침
+function showSeq(t, list, box, zooms = {}) {
+  for (let i = 0; i < list.length; i++) {
+    const [d, span] = list[i]; const [a, b] = span;
+    if (t < a - .001 || t > b + .5) continue;
+    const pin = i === 0 ? 1 : fadeIn(t, a, .4), pout = t > b ? 1 - fadeIn(t, b, .4) : 1;
+    const z = zooms[i] ? zooms[i](t) : null;
+    place(d, box.x, box.y + 10 * (1 - pin), box.w, Math.min(pin, pout), z);
+  }
+}
+const zoomTo = (t, a, b, fx, fy, s) => { const p = Math.min(eio((t - a) / .9), 1 - eio((t - b) / .7)); return { s: 1 + (s - 1) * clamp(p), fx, fy }; };
+
+// ───────────── 렌더 ─────────────
+window.render = t => {
+  hideAll(); clearFx(); setCorner('', '');
+  [introL, monL, crewL, cap, syncTag, copy, logo, corner, ...devTags, ...finalTags].forEach(e => e.style.opacity = 0);
+
+  // ── 인트로 카드
+  if (t < T.intro[1] + .4) big(introL, t, .3, T.intro[1]);
+
+  // ── SEQUENCE 01 · LOUNGE
+  if (t >= T.flight[0] - .4 && t < T.sync1[0] + 1.6) {
+    corner.style.opacity = Math.min(fadeIn(t, T.flight[0], .5), fadeOut(t, T.sync1[0] + .8, .6)); setCorner('LOUNGE PAD', 'PLAN');
+    const list = [[L.L01, T.flight], [L.L02, T.drink], [L.L03, T.diet], [L.L04, T.meal], [L.L05, T.sleep], [L.L06, T.wake], [L.L07, T.schedule], [L.L08, [T.confirm[0], T.sync1[0] + 2]]];
+    const z = {
+      3: t => zoomTo(t, T.meal[0] + .3, T.meal[1] - .5, 400, 560, 1.22),
+      5: t => zoomTo(t, T.wake[0] + .3, T.wake[1] - .5, 650, 400, 1.2),
+      7: t => { // Confirm 후 줌아웃은 sync 장면에서 처리
+        const zi = zoomTo(t, T.confirm[0] + .2, 999, 1701, 1050, 1.18); return zi; },
+    };
+    if (t < T.sync1[0]) showSeq(t, list, BIG_L, z);
+    // 선택 강조
+    if (inn(t, T.meal)) { /* 첫 번째 카드 선택 강조는 원본에 이미 있음 → 테두리 펄스만 */ }
+    if (inn(t, T.sleep)) { // 타임라인 시간이 흐르는 느낌: 두 시간 카드에 살짝 순차 강조
+      cap.style.opacity = Math.min(fadeIn(t, T.sleep[0] + .3), fadeOut(t, T.sleep[1])); cap.textContent = 'Sleep 01:30 – 06:30';
+    }
+    // Flight Schedule: 선택값 칩이 타임라인으로 들어와 정리
+    if (inn(t, [T.schedule[0], T.confirm[0] + .5])) {
+      const s0 = T.schedule[0] + .9;
+      chips.forEach((c, i) => {
+        const a = s0 + i * .55, p = eio((t - a) / 1.1);
+        const sx = 760 + i * 0, sy = 1040 - i * 0; // 화면 아래에서 출발
+        const x = lerp(1024, c.x, p) - 150, y = lerp(1110, 760, p);
+        c.e.style.left = x + 'px'; c.e.style.top = y + 'px';
+        c.e.style.opacity = Math.min(fadeIn(t, a, .3), 1 - eio((t - (a + 1.4)) / .5));
+        c.e.style.transform = `scale(${lerp(1.1, .6, p)})`;
+        docks[i].style.opacity = Math.max(0, Math.min(fadeIn(t, a + 1.0, .25), fadeOut(t, a + 2.4, .6)));
+        docks[i].style.boxShadow = `0 0 30px 8px rgba(248,70,19,.35)`;
+      });
+      cap.style.opacity = Math.min(fadeIn(t, T.schedule[0] + 3.4), fadeOut(t, T.schedule[1])); cap.textContent = '선택한 Meal · Sleep · Wake-up이 하나의 Flight Schedule이 됩니다';
+    }
+    // Confirm(Done) 터치 → 0.3초 정적 → 오렌지 포인트 생성
+    const tapAt = T.confirm[0] + 1.5; tapRing(doneRing, t, tapAt);
+  }
+
+  // ── SEQUENCE 02 · SYNC 01
+  const S1 = T.sync1;
+  if (t >= S1[0] - .01 && t < T.monTitle[0] + .6) {
+    const p = eio((t - S1[0]) / 1.4); // 카메라 줌아웃 → 세 디바이스
+    const lBox = { x: lerp(210, 70, p), y: lerp(118, 370, p), w: lerp(1500, 620, p) };
+    const zL = { s: lerp(1.18, 1, p), fx: 1701, fy: 1050 };
+    const out = fadeOut(t, T.monTitle[0] + .5, .6);
+    place(L.L08, lBox.x, lBox.y, lBox.w, out, zL);
+    const mOp = Math.min(fadeIn(t, S1[0] + .6, .8), out), cOp = mOp;
+    const arrived = t > S1[0] + 4.3;
+    const mDev = arrived ? M.M02 : M.M01, cDev = C.C01;
+    place(M.M01, 1060, 90, 760, arrived ? mOp * (1 - fadeIn(t, S1[0] + 4.3, .35)) : mOp * .55);
+    if (arrived) place(M.M02, 1060, 90, 760, Math.min(fadeIn(t, S1[0] + 4.3, .35), out));
+    place(C.C01, 1180, 560, 520, cOp * (t > S1[0] + 4.3 ? 1 : .55));
+    devTags[0].style.opacity = Math.min(fadeIn(t, S1[0] + 1.2), out) * .9; devTags[0].style.left = '70px'; devTags[0].style.top = (370 + 349 + 16) + 'px'; devTags[0].style.width = '620px';
+    devTags[1].style.opacity = Math.min(fadeIn(t, S1[0] + 1.2), out) * .9; devTags[1].style.left = '1060px'; devTags[1].style.top = '525px'; devTags[1].style.width = '760px';
+    devTags[2].style.opacity = Math.min(fadeIn(t, S1[0] + 1.2), out) * .9; devTags[2].style.left = '1180px'; devTags[2].style.top = '980px'; devTags[2].style.width = '520px';
+    // 경로: Done 버튼 → 위로 → 중간에서 분기 → 모니터 / 크루
+    const A = G(L.L08, 1701, 1050), mid = [880, 250];
+    const mTarget = [1060 + 380, 90 + 214], cTarget = G(C.C01, 1058, 430);
+    const g0 = S1[0] + 1.6, g1 = g0 + 1.2, g2 = g1 + 1.5;
+    if (t >= g0 - .6 && t < g0 + .1) { dot(0, A, fadeIn(t, g0 - .6, .3), 6 + 6 * fadeIn(t, g0 - .5, .4)); halo(0, A, t, g0 - .55); }
+    const fadeP = 1 - eio((t - (g2 + .1)) / .45);
+    if (t >= g0) {
+      const e1 = drawArc(paths[0], A, mid, 160, eio((t - g0) / 1.2), fadeP);
+      if (t < g1) dot(0, e1, 1);
+      if (t >= g1) {
+        const u = eio((t - g1) / 1.5);
+        const e2 = drawArc(paths[1], mid, mTarget, 120, u, fadeP), e3 = drawArc(paths[2], mid, cTarget, 60, u, fadeP);
+        if (t < g2) { dot(1, e2, 1); dot(2, e3, 1); }
+        halo(1, mTarget, t, g2 - .05); halo(2, cTarget, t, g2 - .05);
+      }
+    }
+    if (t > g2 - .1) { synced.style.opacity = fadeIn(t, g2, .4); glow(seatPanelHi, t, g2, S1[1] + .6); }
+    if (t > S1[0] + .8) { syncTag.style.opacity = Math.min(fadeIn(t, S1[0] + .9), out); syncTag.textContent = 'SYNC 01 · Lounge Pad → Passenger Monitor + Crew Pad'; syncTag.style.left = '70px'; syncTag.style.top = '250px'; }
+    cap.style.opacity = Math.min(fadeIn(t, g2 + .3), out); cap.textContent = '하나의 입력이 두 디바이스에 동시에 반영됩니다';
+  }
+
+  // ── SEQUENCE 03 · PASSENGER MONITOR
+  if (t >= T.monTitle[0] && t < T.monTitle[1] + .3) big(monL, t, T.monTitle[0] + .2, T.monTitle[1]);
+  if (t >= T.home[0] - .3 && t < T.sync2[0] + 1.6) {
+    corner.style.opacity = Math.min(fadeIn(t, T.home[0]), fadeOut(t, T.sync2[0] + 1, .5)); setCorner('PASSENGER MONITOR', 'CHECK · ADJUST · REQUEST');
+    const homeBack = [T.adjust[0] + 2.6, T.adjust[1]];
+    const list = [[M.M01, T.home], [M.M02, T.journey], [M.M03, [T.adjust[0], homeBack[0]]], [M.M01, homeBack], [M.M04, T.assist], [M.M05, T.approach], [M.M06, [T.request[0], T.sync2[0] + .1]]];
+    const z = {
+      0: t => zoomTo(t, T.home[0] + 1.6, T.home[1] - .3, 1010, 30, 1.6),
+      3: t => zoomTo(t, homeBack[0] + .3, homeBack[1] - .4, 500, 300, 1.45),
+      4: t => zoomTo(t, T.assist[0] + .4, T.assist[1] - .3, 280, 420, 1.25),
+      5: t => zoomTo(t, T.approach[0] + .3, T.approach[1] - .3, 512, 300, 1.25),
+      6: t => zoomTo(t, T.request[0] + .4, 999, 507, 193, 1.3),
+    };
+    if (t < T.sync2[0]) showSeq(t, list, BIG_M, z);
+    if (inn(t, T.home)) { glow(gaugeHi, t, T.home[0] + 1.8, T.home[1] - .2); cap.style.opacity = Math.min(fadeIn(t, T.home[0] + 1.8), fadeOut(t, T.home[1])); cap.textContent = 'Flight Progress · ICN → CDG, 지금 어디쯤인지 한눈에'; }
+    if (inn(t, T.journey)) { synced.style.opacity = 1; cap.style.opacity = Math.min(fadeIn(t, T.journey[0] + .5), fadeOut(t, T.journey[1])); cap.textContent = 'My Journey · 라운지에서 정한 일정 그대로'; }
+    // Adjust
+    tapRing(changeRing, t, T.adjust[0] + 1.6);
+    if (inn(t, T.adjust)) { cap.style.opacity = Math.min(fadeIn(t, T.adjust[0] + .4), fadeOut(t, T.adjust[1])); cap.textContent = t < homeBack[0] ? 'Second Meal 15분 전 · Change Time' : 'Second Meal 06:00 → 07:00'; }
+    const rp = t >= homeBack[0] ? eio((t - (homeBack[0] + 1.3)) / .7) : 0;
+    roll1.firstChild.style.top = (-30 * rp) + 'px'; roll2.firstChild.style.top = (-36 * rp) + 'px';
+    const rollOn = t >= homeBack[0] && t < homeBack[1] + .4 ? 1 : 0;
+    [roll1, roll2, bgRoll1, bgRoll2].forEach(e => e.style.opacity = rollOn);
+    glow(homeHi, t, homeBack[0] + 1.2, homeBack[1]);
+    // Assist → Approach → Confirm Request
+    if (inn(t, T.assist)) { glow(assistHi, t, T.assist[0] + 1.5, T.assist[1] + .3); tapRing(assistRing, t, T.assist[0] + 1.4); cap.style.opacity = Math.min(fadeIn(t, T.assist[0] + .4), fadeOut(t, T.assist[1])); cap.textContent = 'Assist · 직접 말하기 어려운 불편을 조용히'; }
+    if (inn(t, T.approach)) { glow(apprHi, t, T.approach[0] + .6, T.approach[1] + .3); tapRing(contRing, t, T.approach[1] - .9); cap.style.opacity = Math.min(fadeIn(t, T.approach[0] + .4), fadeOut(t, T.approach[1])); cap.textContent = 'Approach discreetly · 조용히 와주세요'; }
+    if (inn(t, T.request)) { cap.style.opacity = Math.min(fadeIn(t, T.request[0] + .4), fadeOut(t, T.request[1])); cap.textContent = 'Request Confirmed'; }
+  }
+
+  // ── SEQUENCE 05 · SYNC 02 (모니터 → 크루, 1:1)
+  const S2 = T.sync2;
+  if (t >= S2[0] - .01 && t < T.crewTitle[0] + .6) {
+    const p = eio((t - S2[0]) / 1.3), out = fadeOut(t, T.crewTitle[0] + .5, .6);
+    place(M.M06, lerp(210, 80, p), lerp(118, 330, p), lerp(1500, 760, p), out, { s: lerp(1.3, 1, p), fx: 507, fy: 193 });
+    const cIn = Math.min(fadeIn(t, S2[0] + .5, .8), out);
+    place(C.C02, 980, 120, 860, cIn, zoomTo(t, S2[0] + 3.4, 999, 272, 388, 1.0001));
+    devTags[1].style.opacity = Math.min(fadeIn(t, S2[0] + 1), out) * .9; devTags[1].style.left = '80px'; devTags[1].style.top = (330 + 428 + 16) + 'px'; devTags[1].style.width = '760px';
+    devTags[2].style.opacity = Math.min(fadeIn(t, S2[0] + 1), out) * .9; devTags[2].style.left = '980px'; devTags[2].style.top = (120 + 688 + 16) + 'px'; devTags[2].style.width = '860px';
+    const A = G(M.M06, 507, 193), B = G(C.C02, 272, 388);
+    const a0 = S2[0] + 1.4, a1 = a0 + 1.8;
+    if (t >= a0 - .7 && t < a0) { dot(0, A, fadeIn(t, a0 - .7, .3), 4 + 8 * fadeIn(t, a0 - .7, .5)); halo(0, A, t, a0 - .6); }
+    if (t >= a0) { const e = drawArc(paths[0], A, B, 240, eio((t - a0) / 1.8), 1 - eio((t - (a1 + .1)) / .45)); if (t < a1) dot(0, e, 1); halo(1, B, t, a1 - .05); }
+    const land = a1;
+    seatPulse.style.opacity = t > land ? 1 : 0; seatPulse.style.boxShadow = `0 0 ${t > land ? 20 + 14 * Math.sin((t - land) * 6) : 0}px rgba(248,70,19,.6)`;
+    taskCard.style.opacity = fadeIn(t, land + .4, .5); taskCard.style.transform = `translateY(${18 * (1 - fadeIn(t, land + .4, .6))}px)`;
+    syncTag.style.opacity = Math.min(fadeIn(t, S2[0] + .8), out); syncTag.textContent = 'SYNC 02 · Passenger Monitor → Crew Pad · Seat 12A'; syncTag.style.left = '80px'; syncTag.style.top = '250px';
+    cap.style.opacity = Math.min(fadeIn(t, land + .8), out); cap.textContent = '승객의 요청이 좌석 12A의 실제 Task가 됩니다';
+  }
+
+  // ── SEQUENCE 06 · CREW PAD
+  if (t >= T.crewTitle[0] && t < T.crewTitle[1] + .3) big(crewL, t, T.crewTitle[0] + .2, T.crewTitle[1]);
+  if (t >= T.seat[0] - .3 && t < T.feedback[0] + 1.6) {
+    corner.style.opacity = Math.min(fadeIn(t, T.seat[0]), fadeOut(t, T.feedback[0] + 1, .5)); setCorner('CREW PAD', 'PREPARE · SERVE');
+    const list = [[C.C03, T.seat], [C.C02, [T.prep[0], T.feedback[0] + .1]]];
+    const z = { 1: t => zoomTo(t, T.prep[0] + .4, T.done[1] - .2, 760, 290, 1.9) };
+    if (t < T.feedback[0]) showSeq(t, list, BIG_C, z);
+    if (inn(t, T.seat)) { seatSched.style.opacity = fadeIn(t, T.seat[0] + 1.2, .5); cap.style.opacity = Math.min(fadeIn(t, T.seat[0] + .4), fadeOut(t, T.seat[1])); cap.textContent = 'Seat 12A · 라운지 일정과 새 요청이 한 좌석에'; }
+    seatPulse.style.opacity = t >= T.prep[0] && t < T.feedback[0] + 1 ? 1 : seatPulse.style.opacity;
+    taskCard.style.opacity = 0;
+    // 상태 변화: Received → Preparing → Completed
+    const onS = t >= T.prep[0] && t < T.feedback[0] + 1.5 ? 1 : 0;
+    statusBox.style.opacity = onS; rows.forEach(r => r.style.opacity = onS);
+    const m1 = eio((t - (T.prep[0] + 1.2)) / .6), m2 = eio((t - (T.done[0] + .4)) / .6);
+    pillS.style.opacity = onS; pillS.style.top = (239 + 29 * m1 + 29 * m2) + 'px';
+    rows.forEach((r, i) => { const active = (i === 0 && m1 < .5) || (i === 1 && m1 >= .5 && m2 < .5) || (i === 2 && m2 >= .5); r.style.color = active ? '#fff' : '#5B6280'; r.style.fontWeight = active ? 700 : 400; });
+    checkS.style.opacity = onS * fadeIn(t, T.done[0] + 1.0, .3); checkS.style.transform = `scale(${.6 + .4 * fadeIn(t, T.done[0] + 1.0, .3)})`;
+    panelPill.style.opacity = onS * fadeIn(t, T.done[0] + 1.0, .3);
+    if (inn(t, T.prep)) { cap.style.opacity = Math.min(fadeIn(t, T.prep[0] + .4), fadeOut(t, T.prep[1])); cap.textContent = 'Received → Preparing'; }
+    if (inn(t, T.done)) { cap.style.opacity = Math.min(fadeIn(t, T.done[0] + .2), fadeOut(t, T.done[1])); cap.textContent = 'Preparing → Completed'; }
+  }
+
+  // ── SEQUENCE 07 · STATUS FEEDBACK (약하게)
+  const F = T.feedback;
+  if (t >= F[0] - .01 && t < T.final[0] + .6) {
+    const p = eio((t - F[0]) / 1.2), out = fadeOut(t, T.final[0] + .5, .6);
+    place(C.C02, lerp(380, 120, p), lerp(60, 240, p), lerp(1160, 700, p), out, { s: lerp(1.9, 1, p), fx: 760, fy: 290 });
+    place(M.M07, 1060, 300, 760, Math.min(fadeIn(t, F[0] + .5, .8), out) * (t > F[0] + 3.3 ? 1 : .55));
+    const A = G(C.C02, 854, 309), B = [1060 + 380, 300 + 110];
+    const a0 = F[0] + 1.6, a1 = a0 + 1.6;
+    if (t >= a0) { const e = drawArc(paths[3], A, B, 180, eio((t - a0) / 1.6), .55 * (1 - eio((t - (a1 + .1)) / .45)), 2); if (t < a1) dot(0, e, .85, 7); halo(1, B, t, a1 - .05); }
+    devTags[2].style.opacity = Math.min(fadeIn(t, F[0] + 1), out) * .9; devTags[2].style.left = '120px'; devTags[2].style.top = (240 + 560 + 16) + 'px'; devTags[2].style.width = '700px';
+    devTags[1].style.opacity = Math.min(fadeIn(t, F[0] + 1), out) * .9; devTags[1].style.left = '1060px'; devTags[1].style.top = (300 + 428 + 16) + 'px'; devTags[1].style.width = '760px';
+    syncTag.style.opacity = Math.min(fadeIn(t, F[0] + .8), out) * .75; syncTag.textContent = 'STATUS FEEDBACK · Completed → Passenger Monitor'; syncTag.style.left = '120px'; syncTag.style.top = '160px';
+    cap.style.opacity = Math.min(fadeIn(t, a1 + .4), out); cap.textContent = 'Your request has been completed.';
+  }
+
+  // ── SEQUENCE 08 · FINAL SYSTEM VIEW
+  const FN = T.final;
+  if (t >= FN[0] - .01) {
+    const vin = fadeIn(t, FN[0], .9), vout = 1 - eio((t - (FN[0] + 6.0)) / .8);
+    const boxes = [[L.L08, 80, 330, 560], [M.M01, 690, 330, 540], [C.C02, 1290, 286, 470]];
+    boxes.forEach(([d, x, y, w], i) => { place(d, x, y + 16 * (1 - vin), w, vin * vout); const r = d.r; finalTags[i].style.left = r.x + 'px'; finalTags[i].style.width = r.w + 'px'; finalTags[i].style.top = (r.y + r.h + 28) + 'px'; finalTags[i].style.opacity = vin * vout; });
+    const cen = d => [d.r.x + d.r.w / 2, d.r.y + 6];
+    const Lc = cen(L.L08), Mc = cen(M.M01), Cc = cen(C.C02);
+    const links = [[Lc, Mc, 140], [Lc, Cc, 230], [Mc, Cc, 120], [Cc, Mc, -90]];
+    links.forEach(([a, b, lift], i) => { const s0 = FN[0] + 1.2 + i * .55; const pr = eio((t - s0) / 1.0); const op = Math.min(fadeIn(t, s0, .2), 1 - eio((t - (FN[0] + 4.2)) / .9)) * vout * (i === 3 ? .55 : 1); if (t > s0) drawArc(paths[i], i === 3 ? [b[0], b[1] + 0] : a, i === 3 ? [a[0], a[1]] : b, lift, pr, op, i === 3 ? 2 : 3); });
+    copy.style.opacity = Math.min(fadeIn(t, FN[0] + 7.0, .8), fadeOut(t, FN[0] + 9.0, .5));
+    logo.style.opacity = fadeIn(t, FN[0] + 9.2, .8);
+  }
+};
+window.DURATION = DURATION;
+window.ready = Promise.all([document.fonts.load('700 40px KAS'), document.fonts.load('400 40px KAS'), ...[...document.images].map(i => i.decode())]);
+</script>
+</body></html>

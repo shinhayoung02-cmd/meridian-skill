@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- SYNC 연결 설명 템플릿 (gen_sync.js가 SPEC을 넣어 sync0N.html 생성). 4초. 움직임 = connect4s.html(사용자 확정) -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; font-family: KAS; letter-spacing: -0.02em; background: linear-gradient(#FFFFFF, #E9EDF4); }
+  .card { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; will-change: transform; }
+  .card img { position: absolute; display: block; }
+  .w { display: inline-block; white-space: pre; transform-origin: 50% 70%; }
+  .seg { -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tx { position: absolute; left: 0; width: 2400px; text-align: center; white-space: nowrap; }
+  #head { top: 132px; font-weight: 700; font-size: 64px; line-height: 82px; }
+  #sub { top: 311px; font-size: 30px; line-height: 38px; }
+  .lab { position: absolute; top: 442px; font-size: 26px; line-height: 31px; color: #6B7387; white-space: nowrap; transform: translateX(-50%); }
+  .lab b { color: #06176A; font-weight: 700; }
+  #arc { position: absolute; left: 0; top: 0; overflow: visible; }
+  #glow { position: absolute; width: 37px; height: 37px; border-radius: 50%; background: rgb(159,186,245); filter: blur(4.65px); }
+  #dot0 { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #9FBAF5; }
+</style></head>
+<body>
+<div id="stage">
+  <div id="cardA" class="card"><img id="imgA"></div>
+  <div id="cardB" class="card"><img id="imgB"></div>
+  <div id="head" class="tx"></div><div id="sub" class="tx"></div>
+  <div id="labA" class="lab"></div><div id="labB" class="lab"></div>
+  <div id="glow"></div><div id="dot0"></div>
+  <svg id="arc" width="1920" height="1080" viewBox="0 0 1920 1080">
+    <defs><clipPath id="reveal"><rect id="revealRect" x="0" y="380" width="0" height="120"/></clipPath></defs>
+    <path id="refPath" d="M1.50049 61.9618C1.50049 61.9618 27.0707 2.68542 139.812 1.52314C252.553 0.36086 275.799 43.3653 275.799 43.3653" fill="none" stroke="none"/>
+    <g clip-path="url(#reveal)"><path id="arcPath" d="M1.50049 61.9618C1.50049 61.9618 27.0707 2.68542 139.812 1.52314C252.553 0.36086 275.799 43.3653 275.799 43.3653" stroke="#9FBAF5" stroke-width="3" stroke-linecap="round" stroke-dasharray="10 10" fill="none"/></g>
+    <!-- 비행기 (Figma에서 멈춤 위치로 옮겨 둔 원본, 회전 포함) -->
+    <g id="plane"><path id="planePath" d="M10.3915 52.8014L15.9986 55.2568L39.0571 38.5493L51.6733 44.074C52.7886 44.5624 54.0646 44.5916 55.2204 44.1552C56.3763 43.7188 57.3173 42.8526 57.8366 41.747C58.3559 40.6414 58.4108 39.3871 57.9893 38.26C57.5679 37.1329 56.7045 36.2253 55.5891 35.7369L42.973 30.2123L40.7991 2.45544L35.1919 4.01016e-05L31.7586 25.3015L14.937 17.9352L13.3422 10.5356L9.13678 8.6941L7.37188 19.6484L-0.000210679 28.1472L4.20518 29.9888L11.0211 26.2723L27.8427 33.6385L10.3915 52.8014Z" fill="#06176A"/></g>
+  </svg>
+</div>
+<script>
+const SPEC = {"n":4,"title":[["좌석에서 보낸 ","#5f6a85"],["요청","#06176a"],["이,\n","#5f6a85"],["바로 서비스 준비","#051766"],["로 이어집니다.","#5f6a85"]],"tx":960.5,"sub":[["승객이 요청한 물과 상비약 정보","#376bdb",700],["가 좌석 정보와 함께 승무원에게 전달됩니다.","#5f6a85"]],"sx":959.5,"labs":[[["좌석 모니터"," · 요청 확인"]],632],"labs2":[[["승무원 패드"," · 물 · 상비약 요청"]],1422],"cards":[[178,488,908,512,"s4L",0,0,908,512],[1102,488,640,512,"s4R",0,0,640,512]],"arcX":926,"plane":[1112,388],"glow":[1187,445]};
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const popIn = p => { p = clamp(p); const c = .9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const pop = k => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+window.DURATION = 4.0;
+const G = '#5f6a85', RAD = 16.724, SHY = 28.67, SHR = 71.675;
+
+// ── 카드
+const cA = document.getElementById('cardA'), cB = document.getElementById('cardB');
+const setCard = (el, img, [x, y, w, h, src, ox, oy, iw, ih]) => { Object.assign(el.style, { width: w + 'px', height: h + 'px' }); img.src = `scr/${src}.png`;
+  Object.assign(img.style, { left: ox + 'px', top: oy + 'px', width: iw + 'px', height: ih + 'px' }); return { x, y, w, h }; };
+const A = setCard(cA, document.getElementById('imgA'), SPEC.cards[0]), Bc = setCard(cB, document.getElementById('imgB'), SPEC.cards[1]);
+const fullA = 1920 / A.w, fullB = 1920 / Bc.w;
+function place(el, x, y, s, o, sh) { el.style.transform = `translate(${x}px, ${y}px) scale(${s})`; el.style.opacity = o;
+  el.style.borderRadius = (RAD / s * sh) + 'px'; el.style.boxShadow = `0 ${SHY / s}px ${SHR / s}px rgba(10,30,90,${(.28 * sh).toFixed(3)})`; }
+
+// ── 라벨
+[['labA', SPEC.labs], ['labB', SPEC.labs2]].forEach(([id, [[[b, r]], cx]]) => { const el = document.getElementById(id); el.innerHTML = `<b>${b}</b>${r}`; el.style.left = cx + 'px'; });
+
+// ── 글씨: 단어별 등장 + 강조어 색 차오름 (진한색·파랑 구간만, 처음엔 회색)
+const head = document.getElementById('head'), sub = document.getElementById('sub');
+head.style.left = (SPEC.tx - 1200) + 'px'; sub.style.left = (SPEC.sx - 1200) + 'px';
+function words(el, segs) {
+  const out = []; let cur = null;
+  const flush = () => { cur = null; };
+  segs.forEach(([txt, col, wt]) => {
+    const parts = txt.split(/(\n| )/);
+    parts.forEach(p => {
+      if (p === '') return;
+      if (p === '\n') { el.appendChild(document.createElement('br')); flush(); return; }
+      if (p === ' ') { el.appendChild(document.createTextNode(' ')); flush(); return; }
+      if (!cur) { cur = { w: document.createElement('span'), ss: [] }; cur.w.className = 'w'; el.appendChild(cur.w); out.push(cur); }
+      const sp = document.createElement('span'); sp.className = 'seg'; sp.textContent = p; if (wt) sp.style.fontWeight = wt; cur.w.appendChild(sp);
+      cur.ss.push({ sp, c0: col.toLowerCase() === G ? col : G, c1: col });
+    });
+  });
+  return out;
+}
+const HW = words(head, SPEC.title), SW = words(sub, SPEC.sub);
+const fill = (seg, p) => { seg.sp.style.backgroundImage = 'linear-gradient(90deg, ' + seg.c1 + ' ' + (p * 100) + '%, ' + seg.c0 + ' ' + (p * 100) + '%)'; };
+const wordAnim = (list, t0, step, t, out) => list.forEach(({ w }, i) => { const u = (t - t0 - i * step) / .24, k = clamp(u);
+  w.style.opacity = clamp(u * 2.5) * (1 - out); w.style.transform = 'scale(' + (u <= 0 ? .35 : lerp(.35, 1, pop(k))) + ')'; });
+
+// ── 점선·비행기 (Figma 위치)
+const AX = SPEC.arcX - 1.5, AY = 412.876;
+document.getElementById('arcPath').setAttribute('transform', `translate(${AX} ${AY})`);
+const ref = document.getElementById('refPath'), LEN = ref.getTotalLength();
+const AT = u => { const p = ref.getPointAtLength(u * LEN); return [p.x + AX, p.y + AY]; };
+const ang = u => { const a = AT(Math.max(0, u - .01)), b = AT(Math.min(1, u + .01)); return Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI; };
+const PC = [SPEC.plane[0] + 78.1 / 2, SPEC.plane[1] + 76.1 / 2]; // 비행기 중심 (Figma 박스 중심)
+document.getElementById('planePath').setAttribute('transform', `translate(${PC[0] - 29.5} ${PC[1] - 28})`);
+let UE = 0, best = 1e9; for (let i = 0; i <= 1000; i++) { const [x, y] = AT(i / 1000), d = Math.hypot(x - PC[0], y - PC[1]); if (d < best) { best = d; UE = i / 1000; } }
+const PE = AT(UE), OFF = [PC[0] - PE[0], PC[1] - PE[1]], AE = ang(UE);
+const glow = document.getElementById('glow'); glow.style.left = SPEC.glow[0] + 'px'; glow.style.top = SPEC.glow[1] + 'px';
+
+// ── 타이밍 (4초, connect4s.html과 같음)
+const SHRINK = .1, MPOP = .55, HEADT = .75, SUBT = 1.15, LABT = .95, ARC = 1.35, OUT = 3.1;
+
+function render(t) {
+  const out = easeInOut((t - OUT) / .3);
+  { const k = chewy((t - SHRINK) / .8); place(cA, lerp(0, A.x, k), lerp(0, A.y, k), lerp(fullA, 1, k), 1 - out, k * (1 - out)); }
+  if (t < OUT) { const u = t - MPOP, k = popIn(u / .55), f = lerp(.9, 1, k); place(cB, Bc.x + Bc.w * (1 - f) / 2, Bc.y + Bc.h * (1 - f) / 2 + 30 * (1 - chewy(u / .55)), f, clamp(u / .2), 1); }
+  else { const k = chewy((t - OUT - .08) / .8); place(cB, lerp(Bc.x, 0, k), lerp(Bc.y, 0, k), lerp(1, fullB, k), 1, 1 - k); }
+  cB.style.zIndex = t >= OUT ? 5 : 0;
+  wordAnim(HW, HEADT, .06, t, out); wordAnim(SW, SUBT, .025, t, out);
+  const HEND = HEADT + HW.length * .06 + .15, SEND = SUBT + SW.length * .025 + .15, half = Math.ceil(HW.length / 2);
+  HW.forEach(({ ss }, i) => ss.forEach(sg => fill(sg, sg.c0 === sg.c1 ? 1 : easeInOut((t - HEND - (i < half ? 0 : .12)) / .3))));
+  SW.forEach(({ ss }) => ss.forEach(sg => fill(sg, sg.c0 === sg.c1 ? 1 : easeInOut((t - SEND) / .3))));
+  ['labA', 'labB'].forEach((id, i) => { const a = easeOut((t - LABT - i * .08) / .35), el = document.getElementById(id); el.style.opacity = a * (1 - out); el.style.marginTop = (10 * (1 - a)) + 'px'; });
+  // 시작 점 → 비행기가 머리에서 점선을 그으며 Figma 위치까지 → 점선은 끝까지 → 빛 점
+  const d0 = easeOut((t - ARC + .18) / .22), dot0 = document.getElementById('dot0'), S0p = AT(0);
+  dot0.style.left = (S0p[0] - 6) + 'px'; dot0.style.top = (S0p[1] - 6) + 'px'; dot0.style.opacity = d0 * (1 - out); dot0.style.transform = 'scale(' + lerp(.2, 1, d0) + ')';
+  const io4 = q => q < .5 ? 8 * q ** 4 : 1 - Math.pow(-2 * q + 2, 4) / 2;
+  const pk = UE * io4(clamp((t - ARC) / .95)), p = AT(pk), da = ang(pk) - AE, lp = AT(io4(clamp((t - ARC) / 1.1)));
+  document.getElementById('revealRect').setAttribute('width', Math.max(0, Math.max(p[0], lp[0]) - AX + 6).toFixed(1));
+  document.getElementById('revealRect').setAttribute('x', (AX - 6).toFixed(1));
+  document.getElementById('arcPath').style.opacity = (t > ARC ? 1 : 0) * (1 - out);
+  const r = da * Math.PI / 180, ox = OFF[0] * Math.cos(r) - OFF[1] * Math.sin(r), oy = OFF[0] * Math.sin(r) + OFF[1] * Math.cos(r);
+  const plane = document.getElementById('plane'); plane.style.opacity = clamp((t - ARC + .1) / .15) * (1 - out);
+  plane.setAttribute('transform', `translate(${p[0] + ox - PC[0]} ${p[1] + oy - PC[1]}) rotate(${da} ${PC[0]} ${PC[1]})`);
+  const gk = clamp((t - ARC - 1.02) / .3);
+  glow.style.opacity = easeOut(gk) * (1 - out); glow.style.transform = 'scale(' + lerp(.3, 1, pop(gk)) + ')';
+}
+window.render = render;
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => render(0));
+</script>
+</body></html>
