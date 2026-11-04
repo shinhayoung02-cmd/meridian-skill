@@ -99,6 +99,10 @@ https://github.com/shinhayoung02-cmd/meridian-skill (Public) — 로컬 `~/proje
 - 생성: `node sync/gen_sync.js` → `sync/sync0N.html` → `node full/par.js sync/sync0N.html output/SYNC/MERIDIAN_SYNC0N_1080p.mp4 4 4` (각 4초)
 - 모션: 왼쪽 화면 전체→카드 축소 · 오른쪽 카드 팝업 · 단어별 0.35→톡(블러 없음) · 강조어 회색→색 차오름 · 비행기가 점선을 그으며 Figma 위치(빛 점 앞)에서 멈춤 · 끝에 오른쪽 카드 전체화면
 
+### 연결 방식 = GUIDE 영상처럼
+- 레퍼런스 `output/FULL3/MERIDIAN_FULL_GUIDE_1080p.mp4`: 전체 흐름(`full/full2.html`)이 흘러가다 해당 화면 직후에 기능 설명 장면이 끼어들고, 끝나면 흐름 재개. full2의 SYNC 장면 7곳 = SYNC01~07.
+- GUIDE는 업데이트 전 단계 — **끼워 넣는 방식만 따르고 내용·스타일은 현재 것(SYNC01~07, 기능 설명 15줄)**.
+
 ### 기능 설명 (진행 중)
 - Figma 페이지 `기능 설명 · 핵심 3 (새 스타일 · 편집용)` `338:2` → Section 1 `339:3443` = 영상 순서 15줄. 기준 프레임 `344:104`
 - 레이아웃(344:104): 왼쪽 1344(같은 화면 확대 배경 + `#DEE8FD` 70%) 위 화면 카드 1240폭 r36 / 오른쪽 남색 x1397.9: 제목 37.8 → 설명 18 → 요소(≤467폭) → 이름 태그(`#9FBAF5` r65) → 기능 설명 18. 승무원 요소는 흰 판 뒤

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- LOG 43 (2026-11-04): 연결본 맨 앞 5초 소개. 레퍼런스 youtu.be/CQmhd3oMTUM 앞부분 구성
+     0~1.4 남색 단어별 → 1.4~2.7 밝은 배경 슬롯 문구 → 2.7~3.7 세 화면 칸 → 3.7~5.0 로고(끝에 어둡게 = full2 첫 화면) -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; font-family: KAS; letter-spacing: -0.02em; }
+  .bg { position: absolute; inset: 0; }
+  #navy { background: linear-gradient(#030722, #0F2A89); }
+  #light { background: linear-gradient(#FFFFFF, #E9EDF4); }
+  #words { position: absolute; left: 0; width: 1920px; top: 0; height: 1080px; display: flex; align-items: center; justify-content: center; font-size: 64px; font-weight: 700; color: #F1F5FF; white-space: nowrap; } /* LOG 46: 가운데 · 64px */
+  #words span { display: inline-block; margin: 0 10px; }
+  #line { position: absolute; left: 0; width: 1920px; top: 508px; text-align: center; font-size: 46px; color: #5F6A85; white-space: pre; }
+  #slot { display: inline-block; color: #06176A; font-weight: 700; border-bottom: 3px solid #06176A; padding: 0 6px 6px; }
+  #pills { position: absolute; left: 0; width: 1920px; top: 600px; display: flex; justify-content: center; gap: 22px; }
+  .pill { background: #0F2A89; color: #F1F5FF; font-weight: 700; font-size: 28px; padding: 16px 34px; border-radius: 14px; opacity: 0; }
+  .pill.on { background: #F84613; }
+  #logo { position: absolute; left: 550px; top: 455px; width: 820px; opacity: 0; }
+  #dark { position: absolute; inset: 0; background: #03050f; opacity: 0; }
+</style></head>
+<body>
+<div id="stage">
+  <div id="navy" class="bg"></div>
+  <div id="light" class="bg"></div>
+  <div id="words"><span>라운지에서</span><span>기내까지</span><span>이어지는 하나의 흐름</span></div>
+  <div id="line">“ <span id="slot"></span>, 세 개의 화면으로 ”</div>
+  <div id="pills"><div class="pill">Lounge Pad</div><div class="pill">Seat Monitor</div><div class="pill">Crew Pad</div></div>
+  <img id="logo" src="../full/logo_clean.svg">
+  <div id="dark"></div>
+</div>
+<script>
+window.DURATION = 5.0;
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const popIn = p => { p = clamp(p); const c = .9; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const $ = id => document.getElementById(id);
+const W = [...$('words').children], P = [...$('pills').children], slot = $('slot');
+const SLOT = '프레스티지 승객의 하루', POOL = '라운지기내승무원좌석모니터여정식사휴식요청응대흐름하루프레스티지';
+const T1 = 1.4, T2 = 2.7, T3 = 3.7;
+// 슬롯: 글자마다 섞이다가 왼쪽부터 차례로 맞춰짐 (프레임 번호로 정해지는 의사 난수 → 렌더마다 같은 결과)
+const rnd = (i, f) => { const x = Math.sin(i * 127.1 + f * 311.7) * 43758.5453; return x - Math.floor(x); };
+function render(t) {
+  const light = t >= T1 && t < T3 + .25;
+  $('light').style.opacity = light ? 1 : 0;
+  // 1) 남색 단어별: 오른쪽에서 살짝 떠오르며 흐림→선명
+  W.forEach((w, i) => { const k = easeOut((t - .15 - i * .32) / .4); w.style.opacity = t < T1 ? k : 0; w.style.transform = `translate(${24 * (1 - k)}px, ${10 * (1 - k)}px)`; w.style.filter = `blur(${6 * (1 - k)}px)`; });
+  // 2) 슬롯 문구 (2~3 구간 내내 유지, 3에서 위로)
+  const lk = easeInOut((t - T2) / .45);
+  $('line').style.opacity = light ? 1 : 0; $('line').style.transform = `translateY(${-70 * lk}px)`;
+  const f = Math.floor(t * 30 / 2);
+  slot.textContent = [...SLOT].map((c, i) => c === ' ' || t >= T1 + .2 + i * .06 ? c : POOL[Math.floor(rnd(i, f) * POOL.length)]).join('');
+  // 3) 세 화면 칸 톡
+  P.forEach((p, i) => { const u = (t - T2 - .2 - i * .13) / .4, k = popIn(u); p.style.opacity = light ? clamp(u * 3) : 0; p.style.transform = `translateY(${-70 * lk + 20 * (1 - easeOut(u))}px) scale(${lerp(.7, 1, k)})`; });
+  // 4) 남색으로 바뀌며 로고 (원 퍼짐 대신 컷 + 로고 블러→선명), 끝 .25초 어둡게
+  const gk = easeOut((t - T3 - .25) / .7);
+  $('logo').style.opacity = t >= T3 + .25 ? gk : 0; $('logo').style.transform = `scale(${lerp(.92, 1, gk)})`; $('logo').style.filter = `blur(${12 * (1 - gk)}px)`;
+  $('dark').style.opacity = easeInOut((t - 4.75) / .25);
+}
+window.render = render;
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => render(0));
+</script>
+</body></html>

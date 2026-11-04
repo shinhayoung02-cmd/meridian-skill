@@ -1,0 +1,54 @@
+{
+ "10": {
+  "name": "monitor_assist",
+  "dur": 4.65
+ },
+ "11": {
+  "name": "crew_assist_map",
+  "dur": 4.65
+ },
+ "12": {
+  "name": "crew_dashboard",
+  "dur": 4.65
+ },
+ "13": {
+  "name": "crew_assist_detail",
+  "dur": 4.65
+ },
+ "01": {
+  "name": "lounge_diet",
+  "dur": 4.65
+ },
+ "02": {
+  "name": "lounge_wake",
+  "dur": 4.65
+ },
+ "03": {
+  "name": "lounge_schedule",
+  "dur": 4.65
+ },
+ "04": {
+  "name": "monitor_medical",
+  "dur": 4.65
+ },
+ "05": {
+  "name": "crew_water_map",
+  "dur": 4.65
+ },
+ "06": {
+  "name": "crew_water_detail",
+  "dur": 4.65
+ },
+ "07": {
+  "name": "monitor_care",
+  "dur": 4.65
+ },
+ "08": {
+  "name": "crew_wash_map",
+  "dur": 4.65
+ },
+ "09": {
+  "name": "crew_wash_detail",
+  "dur": 4.65
+ }
+}

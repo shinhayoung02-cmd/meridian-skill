@@ -9,3 +9,25 @@ seq1_kling/
 seq_17_22/
 *.webm
 *.mkv
+# 확인용 스틸·시트 / 재생성 가능한 중간물
+*sheet*.jpg
+*sheet*.png
+**/z*.png
+feat/e*.png
+feat/e.jpg
+feat/f12*
+feat/r1.jpg
+feat/chk*
+feat/packs/
+sync/arcchk.png
+sync/c2*.jpg
+sync/c3.jpg
+sync/c4*.jpg
+sync/chk*.png
+sync/chk_all.jpg
+sync/diff_check.jpg
+sync/csheet.jpg
+sync/esheet*.jpg
+sync/evsheet.jpg
+full/t.png
+sec/w*/

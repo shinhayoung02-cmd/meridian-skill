@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- 기능 설명 템플릿 (gen_feat.js가 SPEC을 넣어 rowNN.html 생성). 모션 = row01.html(사용자 확인):
+     전체 화면 → 왼쪽 카드, 제목·설명 단어별, 터치, 요소 떠오름, 태그 톡, 기능 설명 이어 쓰기, 끝에 다시 전체 화면.
+     흰 줄 방지: 화면 이미지 가장자리 E px는 클립 밖으로, 전체화면 상태는 화면보다 M px 크게 -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(#10236E, #050B2E); font-family: KAS; letter-spacing: -0.02em; }
+  .abs { position: absolute; left: 0; top: 0; }
+  #left { overflow: hidden; height: 1080px; }
+  #left img, #win img { position: absolute; display: block; }
+  #ov { position: absolute; inset: 0; background: rgba(222,232,253,.7); }
+  #win { position: absolute; overflow: hidden; }
+  .w { display: inline-block; white-space: pre; }
+  #title { left: 1397.9px; top: 352.2px; font-weight: 700; font-size: 37.8px; line-height: 45px; color: #F1F5FF; white-space: nowrap; }
+  #sub { left: 1397.9px; top: 406.5px; width: 436.5px; font-size: 18px; line-height: 27px; color: #AFC0EE; word-break: keep-all; }
+  .el { position: absolute; opacity: 0; transform-origin: 0 50%; }
+  .tag { position: absolute; height: 45.9px; border-radius: 64.8px; background: #9FBAF5; transform-origin: 0 50%; opacity: 0; overflow: hidden; white-space: nowrap; }
+  .tag > span { position: absolute; left: 27.9px; top: 9.9px; font-weight: 700; font-size: 21.6px; line-height: 26px; color: #F1F5FF; }
+  .desc { position: absolute; font-size: 18px; line-height: 27px; color: #AFC0EE; white-space: nowrap; }
+  .tap { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(255,255,255,.55); box-shadow: 0 0 0 1px rgba(255,255,255,.35); opacity: 0; pointer-events: none; }
+  .ring { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.7); opacity: 0; pointer-events: none; }
+</style></head>
+<body>
+<div id="stage">
+  <div id="left" class="abs"><div id="ov"></div></div>
+  <div id="win"></div>
+  <div id="tapLayer" class="abs"><div class="ring" id="ring"></div><div class="tap" id="tap"></div></div>
+  <div id="title" class="abs"></div><div id="sub" class="abs"></div>
+  <div id="feats"></div>
+</div>
+<script>
+const SPEC = {"T":{"shrink":0.15,"title":0.55,"f0":0.95,"fd":2.6,"hold":0.05,"tail":1.05},"f":[{"id":"354:813","card":[56,193,1231,694],"inner":[-4,-1.7,1240,697.5],"bg":[-288,0,1920,1080],"title":"깨우기 설정","sub":"식사 시간에 깨울지, 어떤 방식으로 깨울지 승객이 정합니다.","tag":["깨우는 방식",1397.9,745.5,157.9],"desc":["승무원 · 은은한 조명 · 화면 알림 · 깨우지 않기 중에 고릅니다.",1406.9,800.4],"taps":[[393.6,239.8]],"noPress":false,"key":"354-813","el":[1391,477,480,201]}]};
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const easeIn = p => { p = clamp(p); return p * p * p; };
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const pop = k => 1 + 2.2 * Math.pow(k - 1, 3) + 1.2 * Math.pow(k - 1, 2);
+const R = (el, [x, y, w, h]) => Object.assign(el.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: h + 'px' });
+const LR = (a, b, k) => a.map((v, i) => lerp(v, b[i], k));
+
+const FS = SPEC.f, N = FS.length, E = 3, M = 8;
+const TM = SPEC.T || {}, SHRINK = TM.shrink ?? .5, TITLE = TM.title ?? 1.25, F0 = TM.f0 ?? 2.0, FD = TM.fd ?? 3.3, OUT = F0 + FD * N + (TM.hold ?? .1);
+window.DURATION = OUT + (TM.tail ?? 1.3);
+
+// ── 화면 이미지 (카드용 · 왼쪽 배경용)
+const win = document.getElementById('win'), left = document.getElementById('left'), ov = document.getElementById('ov');
+const CI = FS.map(f => { const i = document.createElement('img'); i.src = `g/scr_${f.key}.jpg`; win.appendChild(i); return i; });
+const BI = FS.map(f => { const i = document.createElement('img'); i.src = `g/scr_${f.key}.jpg`; left.insertBefore(i, ov); return i; });
+// 전체 화면일 때 화면 이미지 위치: 화면보다 M px 크게 덮음. 세로로 긴 승무원 화면은 위쪽 기준
+const crew = FS[0].inner[3] / FS[0].inner[2] > .7; // 1240x992 → true, 1240x697 → false
+const fullRect = f => { const [, , w, h] = f.inner, s = Math.max((1920 + 2 * M) / w, (1080 + 2 * M) / h), W = w * s, H = h * s;
+  return [(1920 - W) / 2, crew ? -M : (1080 - H) / 2, W, H]; };
+const cardImg = f => [f.card[0] + f.inner[0] - E, f.card[1] + f.inner[1] - E, f.inner[2] + 2 * E, f.inner[3] + 2 * E];
+
+// ── 글자
+const words = (el, txt) => txt.split(/( )/).filter(Boolean).map(p => { if (p === ' ') { el.appendChild(document.createTextNode(' ')); return null; } const s = document.createElement('span'); s.className = 'w'; s.textContent = p; el.appendChild(s); return s; }).filter(Boolean);
+const TW = words(document.getElementById('title'), FS[0].title);
+const SW = words(document.getElementById('sub'), FS[0].sub);
+const feats = document.getElementById('feats');
+const FE = FS.map(f => {
+  const im = document.createElement('img'); im.className = 'el'; im.src = `g/el_${f.key}.png`; R(im, f.el); feats.appendChild(im);
+  const tg = document.createElement('div'); tg.className = 'tag'; Object.assign(tg.style, { left: f.tag[1] + 'px', top: f.tag[2] + 'px', width: f.tag[3] + 'px' });
+  const sp = document.createElement('span'); tg.appendChild(sp); feats.appendChild(tg);
+  const chars = [...f.tag[0]].map(c => { const s = document.createElement('span'); s.textContent = c; s.style.opacity = 0; sp.appendChild(s); return s; });
+  const ds = document.createElement('div'); ds.className = 'desc'; Object.assign(ds.style, { left: f.desc[1] + 'px', top: f.desc[2] + 'px' }); feats.appendChild(ds);
+  return { im, tg, chars, dw: words(ds, f.desc[0]) }; });
+const typeWords = (list, t0, step, t, out = 0) => list.forEach((w, i) => { const k = easeOut((t - t0 - i * step) / .28); w.style.opacity = k * (1 - out); w.style.transform = `translateY(${(1 - k) * 10}px)`; });
+
+function render(t) {
+  // 지금 보이는 화면(기능 사이 같은 기기 → 제자리 크로스페이드)
+  const mix = FS.map((f, i) => i === 0 ? 1 : easeInOut((t - (F0 + FD * i - .35)) / .4));
+  let ci = 0; mix.forEach((m, i) => { if (m > 0) ci = i; });
+  const cf = mix[ci], pf = FS[Math.max(0, ci - 1)], f = FS[ci];
+  const card = LR(pf.card, f.card, cf), cimg = LR(cardImg(pf), cardImg(f), cf), full = LR(fullRect(pf), fullRect(f), cf), bg = LR(pf.bg, f.bg, cf);
+  CI.forEach((im, i) => im.style.opacity = i === 0 ? 1 : mix[i]); BI.forEach((im, i) => im.style.opacity = i === 0 ? 1 : mix[i]);
+  // 전체 화면 ↔ 왼쪽 카드
+  const k = chewy((t - SHRINK) / 1.0), ko = clamp(chewy((t - OUT) / 1.0) / .96), kk = k * (1 - ko);
+  const pw = lerp(1920, 1344, kk); left.style.width = pw + 'px'; ov.style.opacity = kk;
+  const brect = LR(full, bg, kk); BI.forEach(im => R(im, brect));
+  const wr = LR([-M, -M, 1920 + 2 * M, 1080 + 2 * M], card, kk); R(win, wr);
+  const ir = LR(full, cimg, kk); CI.forEach(im => R(im, [ir[0] - wr[0], ir[1] - wr[1], ir[2], ir[3]]));
+  win.style.borderRadius = (36 * kk) + 'px';
+  win.style.boxShadow = `0 36px 88px rgba(0,0,0,${.2 * kk}), 0 14.4px 28.8px rgba(0,0,0,${.4 * kk})`;
+  // 제목·설명
+  const textOut = easeIn((t - OUT) / .35);
+  typeWords(TW, TITLE, .07, t, textOut); typeWords(SW, TITLE + .35, .035, t, textOut);
+  // 기능
+  const tap = document.getElementById('tap'), ring = document.getElementById('ring'); let tapShown = false;
+  FS.forEach((f, i) => { const e = FE[i], T0 = F0 + i * FD, T1 = T0 + FD;
+    f.taps.forEach(([px, py], j) => { const tt = T0 + .15 + j * .45, u = t - tt; if (u < -0.25 || u > .7) return; tapShown = true;
+      const x = f.card[0] + f.inner[0] + px, y = f.card[1] + f.inner[1] + py; const a = clamp((u + .25) / .2) * (1 - clamp((u - .45) / .25));
+      const press = f.noPress ? 0 : (u > 0 && u < .12 ? easeInOut(u / .12) : u >= .12 && u < .35 ? 1 - easeInOut((u - .12) / .23) : 0);
+      Object.assign(tap.style, { left: x + 'px', top: y + 'px', opacity: a, transform: `scale(${1 - .18 * press})` });
+      const rk = clamp((u - .1) / .5); Object.assign(ring.style, { left: (x - 23 - 30 * rk) + 'px', top: (y - 23 - 30 * rk) + 'px', width: (46 + 60 * rk) + 'px', height: (46 + 60 * rk) + 'px', opacity: f.noPress ? 0 : (u > .1 ? .6 * (1 - rk) : 0) }); });
+    const out = i < N - 1 ? easeIn((t - (T1 - .3)) / .25) : textOut;
+    const ek = easeOut((t - (T0 + .55)) / .45); e.im.style.opacity = ek * (1 - out); e.im.style.transform = `translateY(${(1 - ek) * 18 - out * 10}px) scale(${lerp(.96, 1, ek)})`;
+    const gk = clamp((t - (T0 + .95)) / .35); e.tg.style.opacity = (gk > 0 ? 1 : 0) * (1 - out); e.tg.style.transform = `scaleX(${lerp(.15, 1, pop(gk))})`;
+    e.chars.forEach((c, j) => c.style.opacity = clamp((t - (T0 + 1.1) - j * .035) / .08));
+    typeWords(e.dw, T0 + 1.45, .06, t, out); });
+  if (!tapShown) { tap.style.opacity = 0; ring.style.opacity = 0; }
+}
+window.render = render;
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => render(0));
+</script>
+</body></html>

@@ -21,6 +21,7 @@
 </style></head>
 <body>
 <div id="stage">
+  <div id="bgcov" style="position:absolute;inset:0;opacity:0"></div>
   <div id="cardA" class="card"><img id="imgA"></div>
   <div id="cardB" class="card"><img id="imgB"></div>
   <div id="head" class="tx"></div><div id="sub" class="tx"></div>
@@ -52,9 +53,9 @@ const G = '#5f6a85', RAD = 16.724, SHY = 28.67, SHR = 71.675;
 // ── 카드
 const cA = document.getElementById('cardA'), cB = document.getElementById('cardB');
 const setCard = (el, img, [x, y, w, h, src, ox, oy, iw, ih]) => { Object.assign(el.style, { width: w + 'px', height: h + 'px' }); img.src = `scr/${src}.png`;
-  Object.assign(img.style, { left: ox + 'px', top: oy + 'px', width: iw + 'px', height: ih + 'px' }); return { x, y, w, h }; };
+  const E = 3; /* 화면 PNG 가장자리 밝은 줄을 카드 클립 밖으로 */ Object.assign(img.style, { left: (ox - E) + 'px', top: (oy - E) + 'px', width: (iw + 2 * E) + 'px', height: (ih + 2 * E) + 'px' }); return { x, y, w, h }; };
 const A = setCard(cA, document.getElementById('imgA'), SPEC.cards[0]), Bc = setCard(cB, document.getElementById('imgB'), SPEC.cards[1]);
-const fullA = 1920 / A.w, fullB = 1920 / Bc.w;
+const M = 8, cover = c => Math.max((1920 + 2 * M) / c.w, (1080 + 2 * M) / c.h), fullA = cover(A), fullB = cover(Bc);
 function place(el, x, y, s, o, sh) { el.style.transform = `translate(${x}px, ${y}px) scale(${s})`; el.style.opacity = o;
   el.style.borderRadius = (RAD / s * sh) + 'px'; el.style.boxShadow = `0 ${SHY / s}px ${SHR / s}px rgba(10,30,90,${(.28 * sh).toFixed(3)})`; }
 
@@ -97,14 +98,19 @@ let UE = 0, best = 1e9; for (let i = 0; i <= 1000; i++) { const [x, y] = AT(i / 
 const PE = AT(UE), OFF = [PC[0] - PE[0], PC[1] - PE[1]], AE = ang(UE);
 const glow = document.getElementById('glow'); glow.style.left = SPEC.glow[0] + 'px'; glow.style.top = SPEC.glow[1] + 'px';
 
+// ── 전체화면 근처에서 카드와 화면 끝 사이 얇은 틈이 흰 줄로 보이지 않게, 그 순간만 배경을 카드 가장자리 색으로
+const EDGE = {"s1L":"#121b57","s1R":"#22355d","s2L":"#22355d","s2R":"#f2f4fa","s3L":"#090f17","s3R":"#f2f4fa","s4L":"#1a275f","s4R":"#f2f4fa","s5L":"#1a275f","s5R":"#f2f4fa","s6L":"#1f2e6a","s6R":"#f2f4fa","s7L":"#f2f4fa","s7R":"#1a275f"};
+const bgcov = document.getElementById('bgcov');
+// LOG 42: 카드가 좌우 가장자리에 가까우면(여백<100, SYNC01) 틈이 20px 넘을 때까지 덮개 유지
+const hm = c => Math.min(c.x, 1920 - c.x - c.w) + M, K0 = hm(A) < 100 ? 20 / hm(A) : 0, K1 = hm(Bc) < 100 ? Math.max(0, .85 - (1 - 20 / hm(Bc))) : 0;
 // ── 타이밍 (4초, connect4s.html과 같음)
 const SHRINK = .1, MPOP = .55, HEADT = .75, SUBT = 1.15, LABT = .95, ARC = 1.35, OUT = 3.1;
 
 function render(t) {
   const out = easeInOut((t - OUT) / .3);
-  { const k = chewy((t - SHRINK) / .8); place(cA, lerp(0, A.x, k), lerp(0, A.y, k), lerp(fullA, 1, k), 1 - out, k * (1 - out)); }
+  { const k = chewy((t - SHRINK) / .8); if (t < OUT) { bgcov.style.background = EDGE[SPEC.cards[0][4]]; bgcov.style.opacity = 1 - easeInOut((k - K0) / .35); } place(cA, lerp(-M, A.x, k), lerp(-M, A.y, k), lerp(fullA, 1, k), 1 - out, k * (1 - out)); }
   if (t < OUT) { const u = t - MPOP, k = popIn(u / .55), f = lerp(.9, 1, k); place(cB, Bc.x + Bc.w * (1 - f) / 2, Bc.y + Bc.h * (1 - f) / 2 + 30 * (1 - chewy(u / .55)), f, clamp(u / .2), 1); }
-  else { const k = chewy((t - OUT - .08) / .8); place(cB, lerp(Bc.x, 0, k), lerp(Bc.y, 0, k), lerp(1, fullB, k), 1, 1 - k); }
+  else { const k = clamp(chewy((t - OUT - .08) / .8) / .96); bgcov.style.background = EDGE[SPEC.cards[1][4]]; bgcov.style.opacity = easeInOut((k - .5 + K1) / .35); place(cB, lerp(Bc.x, -M, k), lerp(Bc.y, -M, k), lerp(1, fullB, k), 1, 1 - k); }
   cB.style.zIndex = t >= OUT ? 5 : 0;
   wordAnim(HW, HEADT, .06, t, out); wordAnim(SW, SUBT, .025, t, out);
   const HEND = HEADT + HW.length * .06 + .15, SEND = SUBT + SW.length * .025 + .15, half = Math.ceil(HW.length / 2);

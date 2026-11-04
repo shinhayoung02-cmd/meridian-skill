@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<!-- LOG 44: 물결 섹션 카드 (Figma 338:2 Section 4 412:819 값). gen_sec.js가 SPEC 넣어 secN.html 생성. 3.0초
+     0~1.25 full2와 같은 물결 와이프(승무원 화면 → 카드) → 글씨 등장 → 2.65~3.0 모니터 화면으로 크로스페이드 -->
+<style>
+  @font-face { font-family: KAS; font-weight: 400; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Regular.ttf'); }
+  @font-face { font-family: KAS; font-weight: 700; src: url('file:///C:/Users/Admin/AppData/Local/Microsoft/Windows/Fonts/KoreanAirSansKR-Bold.ttf'); }
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+  #stage { position: absolute; inset: 0; overflow: hidden; font-family: KAS; letter-spacing: -0.02em; }
+  .full { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; } /* LOG 45: 앞뒤 영상 프레임 그대로(이미 테두리 처리됨) — 키우면 이음새 점프 */
+  #card { position: absolute; inset: 0; background: linear-gradient(#1C3FAD, #0F2A89); }
+  #big { position: absolute; left: 213px; top: 84px; height: 912px; display: flex; align-items: center; font-size: 760px; font-weight: 700; color: #fff; opacity: .08; line-height: 1; }
+  #col { position: absolute; left: 760px; }
+  #lab { font-size: 32px; line-height: 38px; color: #C3D4F9; margin-bottom: 54px; }
+  .ln { display: flex; align-items: center; gap: 6px; height: 92px; margin-bottom: 12px; font-size: 72px; font-weight: 700; color: #fff; white-space: pre; }
+  .kw { position: relative; padding: 3px 12px; color: #1C3FAD; }
+  .kw i { position: absolute; inset: 0; background: #fff; border-radius: 8px; }
+  .kw span { position: relative; }
+  #edge { position: absolute; inset: 0; }
+</style></head>
+<body>
+<div id="stage">
+  <img id="mon" class="full" src="mon.png">
+  <img id="crew" class="full" src="crew.png">
+  <div id="cardWrap" style="position:absolute;inset:0"><div id="card"><div id="big"></div><div id="col"><div id="lab"></div></div></div></div>
+  <canvas id="edge" width="1920" height="1080"></canvas>
+</div>
+<script>
+/*SPEC*/
+window.DURATION = 3.0;
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, d) => clamp((t - a) / d);
+const easeInOut = p => { p = clamp(p); return p < .5 ? 4 * p ** 3 : 1 - Math.pow(-2 * p + 2, 3) / 2; };
+const easeOut = p => 1 - Math.pow(1 - clamp(p), 3);
+const CHEW = (() => { const N = 400, p = .07, v = []; let acc = 0;
+  for (let i = 0; i <= N; i++) { const t = i / N, sp = t < p ? Math.pow(t / p, 1.6) : .82 * Math.exp(-(t - p) / .085) + .18 * Math.exp(-(t - p) / .42); acc += sp; v.push(acc); }
+  return v.map(x => x / acc); })();
+const chewy = t => { if (t <= 0) return 0; if (t >= 1) return 1; const f = t * 400, i = Math.floor(f); return CHEW[i] + (CHEW[i + 1] - CHEW[i]) * (f - i); };
+const $ = id => document.getElementById(id), g = $('edge').getContext('2d'), ORG = [248, 70, 19];
+// full2.html 물결과 같은 곡선 (크루 → 다음: 왼쪽으로)
+const wipeClip = e => `path('M ${1920 - e - 140} 0 C ${1920 - e + 40} 380, ${1920 - e - 90} 720, ${1920 - e + 70} 1080 L -400 1080 L -400 0 Z')`;
+function wipeEdge(e, a) { g.save(); g.translate(1920, 0); g.scale(-1, 1); g.shadowColor = `rgba(2,6,31,${.45 * a})`; g.shadowBlur = 40; g.shadowOffsetX = -10; g.strokeStyle = `rgba(${ORG},${.5 * a})`; g.lineWidth = 2; g.beginPath(); g.moveTo(e + 140, 0); g.bezierCurveTo(e - 40, 380, e + 90, 720, e - 70, 1080); g.stroke(); g.restore(); }
+$('big').textContent = SPEC.num; $('lab').textContent = SPEC.label;
+const col = $('col'), lines = [], kws = [];
+SPEC.lines.forEach(ln => { const d = document.createElement('div'); d.className = 'ln'; if (!ln.includes('[')) d.style.height = '86px'; col.appendChild(d); lines.push(d);
+  ln.split(/(\[[^\]]+\])/).filter(Boolean).forEach(p => { if (p[0] === '[') { const k = document.createElement('span'); k.className = 'kw'; k.innerHTML = `<i></i><span>${p.slice(1, -1)}</span>`; d.appendChild(k); kws.push(k); } else d.appendChild(document.createTextNode(p)); }); });
+col.style.left = SPEC.x + 'px'; col.style.top = SPEC.y + 'px'; // Figma 412:819 사용자 수정본 위치
+const W0 = .05, WD = 1.2, TX = .75, OUT = 2.65;
+function render(t) {
+  g.clearRect(0, 0, 1920, 1080);
+  const wk = prog(t, W0, WD), e = lerp(2060, -260, chewy(wk));
+  $('crew').style.display = wk >= 1 ? 'none' : 'block';
+  $('cardWrap').style.clipPath = wk <= 0 ? 'inset(0 0 0 100%)' : wk >= 1 ? 'none' : wipeClip(e);
+  if (wk > 0 && wk < 1) wipeEdge(e, Math.sin(Math.PI * wk));
+  // 글씨: 라벨 → 줄마다 아래에서 떠오름 → 키워드 흰 박스가 왼쪽부터 쓱
+  const a0 = easeOut((t - TX) / .35); $('lab').style.opacity = a0; $('lab').style.transform = `translateY(${12 * (1 - a0)}px)`;
+  $('big').style.opacity = .08 * easeOut((t - TX + .2) / .6);
+  lines.forEach((d, i) => { const k = easeOut((t - TX - .12 - i * .1) / .4); d.style.opacity = k; d.style.transform = `translateY(${18 * (1 - k)}px)`; });
+  kws.forEach((k, i) => { const li = lines.indexOf(k.parentNode), s = easeInOut((t - TX - .3 - li * .1) / .35); k.style.clipPath = `inset(-4px ${100 - s * 100}% -4px 0)`; });
+  $('col').style.opacity = 1 - easeInOut((t - OUT + .25) / .25); // 글씨 먼저 사라지고 카드가 모니터로
+  $('cardWrap').style.opacity = 1 - easeInOut((t - OUT) / .35);
+}
+window.render = render;
+window.ready = Promise.all([document.fonts.load('700 20px KAS'), document.fonts.load('400 20px KAS'), ...[...document.images].map(im => im.decode().catch(() => {}))]).then(() => render(0));
+</script>
+</body></html>

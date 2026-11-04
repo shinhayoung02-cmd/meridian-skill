@@ -24,7 +24,7 @@ const path = require('path');
 
   // 구간만 뽑기(시험용): T0=초 T1=초 환경변수
   const t0 = Number(process.env.T0) || 0, t1 = Number(process.env.T1) || duration;
-  const fps = Number(fpsArg) || 30, frames = Math.ceil((t1 - t0) * fps);
+  const fps = Number(fpsArg) || 30, frames = process.env.T1 ? Math.round((t1 - t0) * fps) : Math.ceil((t1 - t0) * fps); // 조각 경계는 프레임 단위라 반올림(올림하면 경계 프레임 중복)
   // 어두운 그라데이션 배경: 미세 노이즈(디더)로 계단·블록 방지 + 낮은 crf. 4K는 비트레이트 하한도 둠
   const ff = spawn(ffmpeg, ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-i', '-',
     '-vf', 'noise=alls=3:allf=t', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', process.env.CRF || '12', '-preset', process.env.PRESET || (scale > 1 ? 'veryfast' : 'slow'), '-tune', 'grain',
